@@ -44,7 +44,14 @@
     "validate-macos-version": "ts-node -P script/tsconfig.json script/validate-macos-version.ts",
     "clean-slate": "rimraf out node_modules app/node_modules && yarn",
     "rebuild-hard:dev": "yarn clean-slate && yarn build:dev",
-    "rebuild-hard:prod": "yarn clean-slate && yarn build:prod"
+    "rebuild-hard:prod": "yarn clean-slate && yarn build:prod",
+    "daemon:build": "cd server && cargo build",
+    "daemon:release": "cd server && cargo build --release",
+    "daemon": "cd server && cargo run",
+    "web": "cd client && npm run dev",
+    "web:build": "cd client && npm run build",
+    "web:typecheck": "cd client && npm run typecheck",
+    "e2e": "bash docs/architecture/scripts/e2e-smoke.sh"
   },
   "author": {
     "name": "GitHub, Inc.",

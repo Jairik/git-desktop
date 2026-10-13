@@ -6,6 +6,19 @@ This repository is a personal fork of
 [TypeScript](https://www.typescriptlang.org) and uses
 [React](https://reactjs.org/).
 
+> **This fork has been condensed into a minimal local server-client client: a
+> Rust backend daemon plus a React web client. See
+> [`docs/architecture/README.md`](docs/architecture/README.md).** The legacy
+> Electron app in [`app/`](app) is retained for reference and incremental
+> porting, but the active product shape is the `server/` + `client/` split.
+>
+> The one big difference from upstream: upstream is a single Electron app (UI +
+> git engine in one process); this fork splits that into `server/` (a Rust
+> `axum` daemon that runs the `git` CLI and exposes a documented JSON-RPC API on
+> `127.0.0.1:4789`) and `client/` (a standalone React/TypeScript/Vite web client
+> that is a thin client over that API). GitHub-specific features (accounts, PRs,
+> CI, Copilot) are deliberately not part of this MVP.
+
 <picture>
   <source
     srcset="https://user-images.githubusercontent.com/634063/202742848-63fa1488-6254-49b5-af7c-96a6b50ea8af.png"
