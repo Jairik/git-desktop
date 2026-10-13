@@ -12,7 +12,7 @@ This is how we've interpreted our convention of how destructive and non-destruct
 
 ![button conventions](https://user-images.githubusercontent.com/5091167/68219886-f794ff80-ffa3-11e9-9f25-40a9bb2e9a71.png)
 
-For more specific discussion of how our dialogs are implemented, please see the [dialogs documentation](https://github.com/desktop/desktop/blob/development/docs/technical/dialogs.md).
+For more specific discussion of how our dialogs are implemented, please see the [dialogs documentation](dialogs.md).
 
 ## Dangerous or destructive actions
 

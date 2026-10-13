@@ -170,26 +170,30 @@ The tests use it to:
 - reset the captured request log
 - inspect which requests the app made
 
-## CI Design
+## Running the Suite
 
-The `e2e-smoke` job in `.github/workflows/ci.yml` runs separately from the main
-`build` job.
+The smoke suite is intended to be run locally against packaged artifacts.
 
-It currently:
+Run it with:
 
-- checks out the repository
-- uses the shared CI environment setup action
-- builds the production app with `DESKTOP_E2E_UPDATES_URL` pointed at the mock
-  server
-- uses the shared Windows signing action when needed
-- packages the app
-- installs the app on macOS and Windows
-- exports `DESKTOP_E2E_APP_PATH`
-- runs `yarn test:e2e:run:packaged`
-- uploads `playwright-videos` as artifacts so traces and videos are retained
+```
+yarn test:e2e:packaged
+```
 
-The CI job intentionally tests production-like packaged or installed artifacts.
-This catches failures that do not show up when running only webpack output.
+That builds the production app with `DESKTOP_E2E_UPDATES_URL` pointed at the
+mock server, packages it, and then runs `yarn test:e2e:run:packaged`. For
+faster iteration you can use:
+
+```
+yarn test:e2e:unpackaged
+```
+
+which skips packaging (`DESKTOP_SKIP_PACKAGE=1`) and runs the same tests against
+the unpackaged build.
+
+Running against a packaged app is intentional: it catches failures that do not
+show up when running only webpack output. Traces and videos are written to
+`playwright-videos/`.
 
 ## Windows-Specific Notes
 

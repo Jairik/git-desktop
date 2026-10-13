@@ -1,15 +1,13 @@
 # GitHub Desktop Documentation
 
-This is the [GitHub Desktop](https://github.com/desktop/desktop) development
-documentation.
+This is the [GitHub Desktop (fork)](https://github.com/Jairik/git-desktop)
+development documentation.
 
 ## Contributing
 
 If you are interested in contributing to the project, you should read these
 resources to get familiar with how things work:
 
- - **[How Can I Contribute?](../.github/CONTRIBUTING.md#how-can-i-contribute)** -
-    details about how you can participate
  - **[Development Environment Setup](contributing/setup.md)** - everything
     you need to know to get Desktop up and running
  - **[Engineering Values](contributing/engineering-values.md)** - our high-level engineering values
@@ -18,18 +16,6 @@ resources to get familiar with how things work:
     there's some enhancements to make your life easier
  - **[Troubleshooting](contributing/troubleshooting.md)** - some additional
     known issues if you're having environment issues
-
-## Process
-
-Details about how the team is organizing and shipping GitHub Desktop:
-
- - **[Roadmap](process/roadmap.md)** - the future as planned so far
- - **[Release Planning](process/release-planning.md)** - how we plan and execute
-    releases
- - **[Issue Triage](process/issue-triage.md)** - how we address issues reported
-    by users
- - **[Pull Requests](process/pull-requests.md)** - how code contributions are submitted and reviewed
- - **[Releasing Updates](process/releasing-updates.md)** - how we deploy things
 
 ## Technical
 

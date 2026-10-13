@@ -61,7 +61,7 @@ export async function getThankYouByUser(
       return
     }
 
-    // This assumes the thank you is of the form that the draft-release notes generates:
+    // This assumes the thank you is of the form that the release notes generate:
     // [type] some release note. Thanks @user_handle!
     // Tho not sure if even allowed, if a user had a `!` in their user name,
     // we would not get the thank them also we could erroneously thank someone if

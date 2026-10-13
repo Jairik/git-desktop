@@ -48,12 +48,6 @@ the target's `koffi.node`, without filename collisions.
 The `version` attribute in `app/package.json` is the canonical reference for
 the version number you see in the **About** view of GitHub Desktop.
 
-## `changelog.json`
-
-This file is used to track user-facing changes associated with each Desktop
-release. This can include new features, bug fixes, improvements or even removed
-features.
-
 ## `script/build.ts`
 
 After webpack the next component in the pipeline is  `script/build.ts` which

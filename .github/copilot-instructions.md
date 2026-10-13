@@ -154,7 +154,7 @@ yarn prettier --write
 - **Never commit secrets, passwords, or sensitive data**
 - **Validate and sanitize user input**
 - **Follow secure coding practices**: Review code for XSS, injection, and other vulnerabilities
-- **Report security issues**: Follow [SECURITY.md](../SECURITY.md), not public issues
+- **Report security issues**: via a private channel, not a public issue
 
 ### Git Practices
 
@@ -171,10 +171,9 @@ yarn prettier --write
 - **`script/`**: Build and utility scripts
 - **`docs/`**: Documentation
   - `docs/contributing/`: Contributor guides
-  - `docs/process/`: Process documentation
   - `docs/technical/`: Technical documentation
 - **`eslint-rules/`**: Custom ESLint rules
-- **`.github/`**: GitHub-specific files (workflows, issue templates, contributing guide)
+- **`.github/`**: Copilot instructions and agent skills
 
 ## Development Tips
 
@@ -184,21 +183,14 @@ yarn prettier --write
 
 ## Contributing
 
-- See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines
 - Follow the [Engineering Values](../docs/contributing/engineering-values.md)
-- Check [help wanted](https://github.com/desktop/desktop/issues?q=is%3Aissue+is%3Aopen+label%3A%22help%20wanted%22) label for good first issues
 - Review [Style Guide](../docs/contributing/styleguide.md) before submitting code
 - Setup instructions: [../docs/contributing/setup.md](../docs/contributing/setup.md)
-
-## Code of Conduct
-
-This project adheres to the Contributor Covenant [Code of Conduct](../CODE_OF_CONDUCT.md). All interactions must be respectful and professional.
 
 ## Resources
 
 - [Official website](https://desktop.github.com)
 - [Getting started docs](https://docs.github.com/en/desktop/overview/getting-started-with-github-desktop)
-- [Release notes](https://desktop.github.com/release-notes/)
 - [Known issues](../docs/known-issues.md)
 
 ## When Making Changes

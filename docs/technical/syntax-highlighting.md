@@ -12,7 +12,7 @@ JavaScript, JSON, TypeScript, Coffeescript, HTML, Asp, JavaServer Pages, CSS, SC
 
 This list was never meant to be exhaustive, we expect to add more languages going forward but this seemed like a good first step.
 
-Note, however that this list is likely to grow stale so I'd recommend checking [the code](https://github.com/desktop/desktop/blob/development/app/src/highlighter/index.ts) directly.
+Note, however that this list is likely to grow stale so I'd recommend checking [the code](../../app/src/highlighter/index.ts) directly.
 
 ### I want to add my favorite language
 

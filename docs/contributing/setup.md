@@ -33,7 +33,9 @@ editor to work nicely with the GitHub Desktop repository.
 
 ## Building Desktop
 
-First, create a fork of `desktop/desktop` and then clone the repository to your local machine. You'll need to be inside the repository in order to build the application locally.
+First, create a fork of `Jairik/git-desktop` and then clone the repository to
+your local machine. You'll need to be inside the repository in order to build
+the application locally.
 
 The typical workflow to get up running is as follows:
 
@@ -89,7 +91,5 @@ should automatically install itself on first start when in development mode.
 
 You're almost there! Here's a couple of things we recommend you read next:
 
- - [Help Wanted](../../.github/CONTRIBUTING.md#help-wanted) - we've marked some
-   tasks in the backlog that are ideal for external contributors
- - [Notes for Contributors](../process/notes-for-contributors.md) - some notes
+ - [Notes for Contributors](../contributing/styleguide.md) - some notes
    for new contributors getting started

@@ -70,7 +70,7 @@ const StatsEndpoint =
 
 /** The URL to the stats samples page. */
 export const SamplesURL =
-  'https://github.com/desktop/desktop/blob/development/docs/process/usage-data.md'
+  'https://github.com/Jairik/git-desktop/blob/development/docs/process/usage-data.json'
 
 const LastDailyStatsReportKey = 'last-daily-stats-report'
 

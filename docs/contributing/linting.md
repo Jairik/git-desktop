@@ -31,6 +31,7 @@ $ yarn lint:fix
 
 to automatically fix them. If any issues remain, you'll have to fix them manually (and the output will tell you that).
 
-## Continuous Integration (CI)
+## Linting Locally
 
-Each of our CI services also runs linting checks on [open pull requests](https://github.com/desktop/desktop/pulls) in the GitHub Desktop repository. Pull requests must pass CI to before we accept them, so don't forget to lint locally.
+Linting runs locally rather than in CI — this fork has no CI pipelines. Run
+`yarn lint:fix` before committing so formatting and lint rules are satisfied.

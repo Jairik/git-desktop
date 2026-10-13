@@ -60,8 +60,8 @@ questions, and some examples of answers here will help with the next section.
     automated tests in place
   - Application dependencies may be able to be wrapped in tests, to help
     identify regressions before a change is released to users
-  - Tooling dependencies are used heavily as part of continuous integration
-    tests, and any potential problems will be caught early
+  - Tooling dependencies are used heavily as part of the build and test
+    scripts, and any potential problems will be caught early
 
 ## Grouping dependencies by impact
 

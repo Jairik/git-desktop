@@ -1,9 +1,9 @@
 {
   "repository": {
     "type": "git",
-    "url": "https://github.com/desktop/desktop.git"
+    "url": "https://github.com/Jairik/git-desktop.git"
   },
-  "description": "GitHub Desktop build dependencies",
+  "description": "GitHub Desktop (fork) build dependencies",
   "scripts": {
     "cli": "ts-node app/src/cli/main.ts",
     "check:eslint": "tsc -P eslint-rules/",
@@ -38,17 +38,13 @@
     "prettier": "prettier --check \"./**/*.{ts,tsx,js,json,jsx,scss,html,yaml,yml}\" \"./eslint-rules/**/*.mjs\"",
     "lint:src": "yarn eslint-check && yarn eslint",
     "lint:src:fix": "yarn eslint --fix",
-    "eslint": "eslint --cache --rulesdir ./eslint-rules \"./eslint-rules/**/*.{js,mjs}\" \"./script/**/*.ts{,x}\" \"./app/{src,typings,test}/**/*.{j,t}s{,x}\" \"./changelog.json\"",
+    "eslint": "eslint --cache --rulesdir ./eslint-rules \"./eslint-rules/**/*.{js,mjs}\" \"./script/**/*.ts{,x}\" \"./app/{src,typings,test}/**/*.{j,t}s{,x}\"",
     "eslint-check": "eslint --print-config .eslintrc.* | eslint-config-prettier-check",
     "validate-electron-version": "ts-node -P script/tsconfig.json script/validate-electron-version.ts",
     "validate-macos-version": "ts-node -P script/tsconfig.json script/validate-macos-version.ts",
     "clean-slate": "rimraf out node_modules app/node_modules && yarn",
     "rebuild-hard:dev": "yarn clean-slate && yarn build:dev",
-    "rebuild-hard:prod": "yarn clean-slate && yarn build:prod",
-    "draft-release": "ts-node -P script/tsconfig.json script/draft-release/index.ts",
-    "draft-release:format": "prettier --check --write changelog.json app/package.json && yarn validate-changelog",
-    "draft-release:pr": "ts-node -P script/tsconfig.json script/draft-release/draft-pull-request.ts",
-    "validate-changelog": "ts-node -P script/tsconfig.json script/validate-changelog.ts"
+    "rebuild-hard:prod": "yarn clean-slate && yarn build:prod"
   },
   "author": {
     "name": "GitHub, Inc.",
