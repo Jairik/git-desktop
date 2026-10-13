@@ -20,3 +20,11 @@ junit*.xml
 *.swp
 tslint-rules/
 playwright-videos/
+
+# Rust backend server
+/server/target/
+/server/data/
+
+# React web client
+/client/node_modules/
+/client/dist/
