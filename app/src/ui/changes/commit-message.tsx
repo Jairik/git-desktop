@@ -62,15 +62,23 @@ import { formatCommitMessage } from '../../lib/format-commit-message'
 import { useRepoRulesLogic } from '../../lib/helpers/repo-rules'
 import { isDotCom } from '../../lib/endpoint-capabilities'
 import { WorkingDirectoryFileChange } from '../../models/status'
-import {
-  enableCommitMessageGeneration,
-  enableCopilotSdkCommitMessageGeneration,
-  enableHooksEnvironment,
-} from '../../lib/feature-flag'
-import { getAccountForCommitMessageGeneration } from '../../lib/get-account-for-repository'
+import { enableHooksEnvironment } from '../../lib/feature-flag'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
 import { HookProgress } from '../../lib/git'
 import { assertNever } from '../../lib/fatal-error'
+import {
+  getLocalAgent,
+  getRecentLocalAgents,
+  getSelectedLocalAgent,
+  ILocalAgent,
+  ILocalAgentModel,
+  ILocalAgentSelection,
+  ILocalAgentStatus,
+  LocalAgents,
+  onLocalAgentStatus,
+  setSelectedLocalAgent,
+} from '../../lib/local-agent'
+import { Disposable } from 'event-kit'
 
 const addAuthorIcon: OcticonSymbolVariant = {
   w: 18,
@@ -117,7 +125,6 @@ interface ICommitMessageProps {
   readonly hookProgress: HookProgress | null
   readonly onShowCommitProgress: (() => void) | undefined
   readonly isGeneratingCommitMessage?: boolean
-  readonly shouldShowGenerateCommitMessageCallOut?: boolean
   readonly commitToAmend: Commit | null
   readonly placeholder: string
   readonly prepopulateCommitSummary: boolean
@@ -173,12 +180,16 @@ interface ICommitMessageProps {
    */
   readonly onPersistCommitMessage?: (message: ICommitMessage) => void
 
-  readonly onGenerateCommitMessage?: (
-    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean
-  ) => void
-
   readonly onCancelGenerateCommitMessage?: () => void
+
+  /**
+   * Called to generate a commit message with a local CLI agent (opencode,
+   * agy) using the given agent and model.
+   */
+  readonly onGenerateCommitMessageWithLocalAgent?: (
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    selection: ILocalAgentSelection
+  ) => void
 
   /**
    * Called when the component has given the commit message focus due to
@@ -264,6 +275,18 @@ interface ICommitMessageState {
   readonly repoRuleCommitMessageFailures: RepoRulesMetadataFailures
   readonly repoRuleCommitAuthorFailures: RepoRulesMetadataFailures
   readonly repoRuleBranchNameFailures: RepoRulesMetadataFailures
+
+  /** The agent and model used for local agent commit message generation */
+  readonly localAgentSelection: ILocalAgentSelection
+
+  /** Whether the in-flight commit message generation was started locally */
+  readonly isLocalAgentGenerating: boolean
+
+  /** What the local agent is currently doing, while it's generating */
+  readonly localAgentStatus: ILocalAgentStatus | null
+
+  /** Ticks while generating so the elapsed time stays current */
+  readonly now: number
 }
 
 function findCommitMessageAutoCompleteProvider(
@@ -303,6 +326,9 @@ export class CommitMessage extends React.Component<
 
   private readonly COMMIT_MSG_ERROR_BTN_ID = 'commit-message-failure-hint'
 
+  private localAgentStatusSubscription: Disposable | null = null
+  private localAgentTimer: number | null = null
+
   public constructor(props: ICommitMessageProps) {
     super(props)
     const { commitMessage } = this.props
@@ -321,6 +347,35 @@ export class CommitMessage extends React.Component<
       repoRuleCommitMessageFailures: new RepoRulesMetadataFailures(),
       repoRuleCommitAuthorFailures: new RepoRulesMetadataFailures(),
       repoRuleBranchNameFailures: new RepoRulesMetadataFailures(),
+      localAgentSelection: getSelectedLocalAgent(),
+      isLocalAgentGenerating: false,
+      localAgentStatus: null,
+      now: Date.now(),
+    }
+  }
+
+  private onLocalAgentStatus = (
+    status: ILocalAgentStatus | null,
+    repositoryPath: string
+  ) => {
+    if (repositoryPath === this.props.repository.path) {
+      this.setState({ localAgentStatus: status, now: Date.now() })
+    }
+  }
+
+  private startLocalAgentTimer() {
+    if (this.localAgentTimer === null) {
+      this.localAgentTimer = window.setInterval(
+        () => this.setState({ now: Date.now() }),
+        1000
+      )
+    }
+  }
+
+  private stopLocalAgentTimer() {
+    if (this.localAgentTimer !== null) {
+      window.clearInterval(this.localAgentTimer)
+      this.localAgentTimer = null
     }
   }
 
@@ -329,10 +384,15 @@ export class CommitMessage extends React.Component<
     const { props, state } = this
     props.onPersistCommitMessage?.(state.commitMessage)
     window.removeEventListener('keydown', this.onKeyDown)
+    this.localAgentStatusSubscription?.dispose()
+    this.stopLocalAgentTimer()
   }
 
   public async componentDidMount() {
     window.addEventListener('keydown', this.onKeyDown)
+    this.localAgentStatusSubscription = onLocalAgentStatus(
+      this.onLocalAgentStatus
+    )
     await this.updateRepoRuleFailures(undefined, undefined, true)
   }
 
@@ -363,6 +423,20 @@ export class CommitMessage extends React.Component<
     prevProps: ICommitMessageProps,
     prevState: ICommitMessageState
   ) {
+    if (
+      prevProps.isGeneratingCommitMessage &&
+      !this.props.isGeneratingCommitMessage &&
+      this.state.isLocalAgentGenerating
+    ) {
+      this.setState({ isLocalAgentGenerating: false, localAgentStatus: null })
+    }
+
+    if (this.isShowingLocalAgentStatus) {
+      this.startLocalAgentTimer()
+    } else {
+      this.stopLocalAgentTimer()
+    }
+
     if (
       this.props.autocompletionProviders !== prevProps.autocompletionProviders
     ) {
@@ -870,42 +944,94 @@ export class CommitMessage extends React.Component<
     }
   }
 
-  private getGenerateCommitMessageMenuItem(): IMenuItem | null {
+  private getLocalAgentMenuItem(): IMenuItem | null {
     const {
-      accounts,
-      onGenerateCommitMessage,
+      onGenerateCommitMessageWithLocalAgent,
       filesSelected,
       isCommitting,
       isGeneratingCommitMessage,
       commitToAmend,
     } = this.props
 
-    if (
-      !accounts.some(enableCommitMessageGeneration) ||
-      onGenerateCommitMessage === undefined
-    ) {
+    if (onGenerateCommitMessageWithLocalAgent === undefined) {
       return null
     }
 
-    const noFilesSelected = filesSelected.length === 0
-    const noChangesAvailable = !commitToAmend && noFilesSelected
+    const { localAgentSelection } = this.state
+    const agentName =
+      getLocalAgent(localAgentSelection.agent)?.name ??
+      localAgentSelection.agent
 
     return {
-      label: __DARWIN__
-        ? 'Generate Commit Message with Copilot'
-        : 'Generate commit message with Copilot',
-      action: () => {
-        const { commitMessage } = this.state
-        onGenerateCommitMessage(
-          filesSelected,
-          !!commitMessage.summary || !!commitMessage.description
-        )
-      },
+      label: `Generate commit message with ${agentName}`,
+      action: () => this.generateWithLocalAgent(),
       enabled:
         isCommitting !== true &&
         !isGeneratingCommitMessage &&
-        !noChangesAvailable,
+        (commitToAmend !== null || filesSelected.length > 0),
     }
+  }
+
+  private get isShowingLocalAgentStatus() {
+    return (
+      this.state.isLocalAgentGenerating &&
+      this.props.isGeneratingCommitMessage === true
+    )
+  }
+
+  private renderLocalAgentStatus() {
+    if (!this.isShowingLocalAgentStatus) {
+      return null
+    }
+
+    const { localAgentStatus, localAgentSelection, now } = this.state
+    const agentName =
+      localAgentStatus?.agentName ??
+      getLocalAgent(localAgentSelection.agent)?.name ??
+      localAgentSelection.agent
+    const model = localAgentStatus?.model ?? localAgentSelection.model
+    const message = localAgentStatus?.message ?? 'Collecting your changes'
+    const startedAt = localAgentStatus?.startedAt ?? now
+    const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000))
+    const draft = localAgentStatus?.draft
+      ?.replace(/^```[^\n]*\n?/, '')
+      .replace(/```\s*$/, '')
+
+    return (
+      <div className="local-agent-status" aria-hidden={true}>
+        <div className="local-agent-status-header">
+          <span className="local-agent-status-orb" />
+          <span className="local-agent-status-agent">{agentName}</span>
+          <span className="local-agent-status-model">{model}</span>
+          <span className="local-agent-status-elapsed">
+            {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+          </span>
+        </div>
+        <div className="local-agent-status-step" key={message}>
+          {message}
+          <span className="local-agent-status-dots" />
+        </div>
+        {localAgentStatus?.detail && (
+          <div className="local-agent-status-detail">
+            {localAgentStatus.detail}
+          </div>
+        )}
+        {draft && (
+          <pre className="local-agent-status-draft">
+            {draft}
+            <span className="local-agent-status-caret" />
+          </pre>
+        )}
+      </div>
+    )
+  }
+
+  private generateWithLocalAgent() {
+    this.setState({ isLocalAgentGenerating: true, localAgentStatus: null })
+    this.props.onGenerateCommitMessageWithLocalAgent?.(
+      this.props.filesSelected,
+      this.state.localAgentSelection
+    )
   }
 
   private onContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -918,7 +1044,7 @@ export class CommitMessage extends React.Component<
 
     const items: IMenuItem[] = [this.getAddRemoveCoAuthorsMenuItem()]
 
-    const generateMenuItem = this.getGenerateCommitMessageMenuItem()
+    const generateMenuItem = this.getLocalAgentMenuItem()
     if (generateMenuItem) {
       items.push(generateMenuItem)
     }
@@ -929,7 +1055,7 @@ export class CommitMessage extends React.Component<
   private onAutocompletingInputContextMenu = () => {
     const items: IMenuItem[] = [this.getAddRemoveCoAuthorsMenuItem()]
 
-    const generateMenuItem = this.getGenerateCommitMessageMenuItem()
+    const generateMenuItem = this.getLocalAgentMenuItem()
     if (generateMenuItem) {
       items.push(generateMenuItem)
     }
@@ -962,26 +1088,6 @@ export class CommitMessage extends React.Component<
     }
   }
 
-  private onCopilotButtonClick = async (
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    e.preventDefault()
-
-    if (this.props.isGeneratingCommitMessage) {
-      if (this.canCancelGenerateCommitMessage) {
-        this.props.onCancelGenerateCommitMessage?.()
-      }
-      return
-    }
-
-    const { commitMessage } = this.state
-
-    this.props.onGenerateCommitMessage?.(
-      this.props.filesSelected,
-      !!commitMessage.summary || !!commitMessage.description
-    )
-  }
-
   private onCoAuthorToggleButtonClick = async (
     e: React.MouseEvent<HTMLButtonElement>
   ) => {
@@ -990,8 +1096,71 @@ export class CommitMessage extends React.Component<
     this.onToggleCoAuthors()
   }
 
-  private renderCopilotButton() {
-    if (!this.isCopilotButtonEnabled) {
+  private onLocalAgentButtonClick = (
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.preventDefault()
+
+    if (this.props.isGeneratingCommitMessage) {
+      if (this.state.isLocalAgentGenerating) {
+        this.props.onCancelGenerateCommitMessage?.()
+      }
+      return
+    }
+
+    this.generateWithLocalAgent()
+  }
+
+  private selectLocalAgent(selection: ILocalAgentSelection) {
+    setSelectedLocalAgent(selection)
+    this.setState({ localAgentSelection: selection })
+  }
+
+  private onLocalAgentModelButtonClick = async (
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.preventDefault()
+
+    const current = this.state.localAgentSelection
+    const toItem = (selection: ILocalAgentSelection, label: string) => ({
+      label,
+      type: 'checkbox' as const,
+      checked:
+        selection.agent === current.agent && selection.model === current.model,
+      action: () => this.selectLocalAgent(selection),
+    })
+
+    const items: IMenuItem[] = getRecentLocalAgents().map(s =>
+      toItem(s, formatLocalAgentSelection(s))
+    )
+    items.push({ type: 'separator' })
+
+    const listings = await Promise.allSettled(
+      LocalAgents.map(a => a.listModels())
+    )
+
+    LocalAgents.forEach((agent, i) => {
+      const listing = listings[i]
+      if (listing.status === 'rejected') {
+        log.error(`Failed to list ${agent.name} models`, listing.reason)
+        items.push({
+          label: agent.name,
+          submenu: [{ label: 'Could not list models', enabled: false }],
+        })
+        return
+      }
+
+      items.push({
+        label: agent.name,
+        submenu: buildModelMenu(agent, listing.value, toItem),
+      })
+    })
+
+    showContextualMenu(items)
+  }
+
+  private renderLocalAgentButton() {
+    if (this.props.onGenerateCommitMessageWithLocalAgent === undefined) {
       return null
     }
 
@@ -1000,55 +1169,49 @@ export class CommitMessage extends React.Component<
       isCommitting,
       isGeneratingCommitMessage,
       commitToAmend,
-      shouldShowGenerateCommitMessageCallOut,
     } = this.props
+    const { localAgentSelection, isLocalAgentGenerating } = this.state
+    const selectionLabel = formatLocalAgentSelection(localAgentSelection)
 
-    const noFilesSelected = filesSelected.length === 0
-    const noChangesAvailable = !commitToAmend && noFilesSelected
+    const noChangesAvailable = !commitToAmend && filesSelected.length === 0
+    const showCancel = isGeneratingCommitMessage && isLocalAgentGenerating
 
-    let ariaLabel = 'Generate commit message with Copilot'
-    const canCancelGenerateCommitMessage = this.canCancelGenerateCommitMessage
-    const showCancelGenerateCommitMessage =
-      isGeneratingCommitMessage === true && canCancelGenerateCommitMessage
-
-    if (!isGeneratingCommitMessage && noChangesAvailable) {
-      ariaLabel += '. Files must be selected to generate a commit message.'
-    } else if (showCancelGenerateCommitMessage) {
+    let ariaLabel = `Generate commit message with ${selectionLabel}`
+    if (showCancel) {
       ariaLabel = 'Cancel generating commit details'
-    } else if (isGeneratingCommitMessage) {
-      ariaLabel = 'Generating commit details…'
+    } else if (!isGeneratingCommitMessage && noChangesAvailable) {
+      ariaLabel += '. Files must be selected to generate a commit message.'
     }
 
     return (
       <>
         {this.isCoAuthorInputEnabled && <div className="separator" />}
         <Button
-          className="copilot-button"
-          onClick={this.onCopilotButtonClick}
+          className="local-agent-button"
+          onClick={this.onLocalAgentButtonClick}
           ariaLabel={ariaLabel}
           tooltip={ariaLabel}
           disabled={
             isCommitting === true ||
-            (isGeneratingCommitMessage === true &&
-              !canCancelGenerateCommitMessage) ||
+            (isGeneratingCommitMessage && !isLocalAgentGenerating) ||
             (!isGeneratingCommitMessage && noChangesAvailable)
           }
         >
           <AriaLiveContainer
-            message={
-              isGeneratingCommitMessage ? 'Generating commit details…' : ''
-            }
+            message={isLocalAgentGenerating ? 'Generating commit details…' : ''}
           />
           <Octicon
-            symbol={
-              showCancelGenerateCommitMessage
-                ? octicons.squareCircle
-                : octicons.copilot
-            }
+            symbol={showCancel ? octicons.squareCircle : octicons.sparkle}
           />
-          {shouldShowGenerateCommitMessageCallOut && (
-            <span className="call-to-action-bubble">New</span>
-          )}
+        </Button>
+        <Button
+          className="local-agent-model-button"
+          onClick={this.onLocalAgentModelButtonClick}
+          ariaLabel="Choose local agent and model"
+          tooltip={`Local agent: ${selectionLabel}`}
+          disabled={isGeneratingCommitMessage}
+        >
+          <Octicon symbol={octicons.triangleDown} />
         </Button>
       </>
     )
@@ -1059,7 +1222,8 @@ export class CommitMessage extends React.Component<
 
     return (
       <>
-        {(this.isCoAuthorInputEnabled || this.isCopilotButtonEnabled) && (
+        {(this.isCoAuthorInputEnabled ||
+          this.props.onGenerateCommitMessageWithLocalAgent !== undefined) && (
           <div className="separator" />
         )}
         <Button
@@ -1205,33 +1369,6 @@ export class CommitMessage extends React.Component<
     }
   }
 
-  /**
-   * Whether the Copilot button should be available
-   */
-  private get isCopilotButtonEnabled() {
-    const { accounts, onGenerateCommitMessage } = this.props
-    return (
-      accounts.some(enableCommitMessageGeneration) &&
-      onGenerateCommitMessage !== undefined
-    )
-  }
-
-  /**
-   * Whether an in-flight commit message generation can be cancelled.
-   */
-  private get canCancelGenerateCommitMessage() {
-    const account = getAccountForCommitMessageGeneration(
-      this.props.accounts,
-      this.props.repository
-    )
-
-    return (
-      account !== undefined &&
-      enableCopilotSdkCommitMessageGeneration(account) &&
-      this.props.onCancelGenerateCommitMessage !== undefined
-    )
-  }
-
   private renderActionBar() {
     const { isCommitting, isGeneratingCommitMessage } = this.props
 
@@ -1242,7 +1379,7 @@ export class CommitMessage extends React.Component<
     return (
       <div className={className}>
         {this.renderCoAuthorToggleButton()}
-        {this.renderCopilotButton()}
+        {this.renderLocalAgentButton()}
         {this.renderCommitOptionsButton()}
       </div>
     )
@@ -1734,6 +1871,7 @@ export class CommitMessage extends React.Component<
     const className = classNames('commit-message-component', {
       'with-action-bar': true,
       'with-co-authors': this.isCoAuthorInputVisible,
+      'local-agent-generating': this.isShowingLocalAgentStatus,
     })
 
     const descriptionClassName = classNames('description-field', {
@@ -1784,7 +1922,11 @@ export class CommitMessage extends React.Component<
             label={this.props.showInputLabels === true ? 'Summary' : undefined}
             screenReaderLabel="Commit summary"
             className={summaryInputClassName}
-            placeholder={placeholder}
+            placeholder={
+              this.isShowingLocalAgentStatus
+                ? 'Generating commit message…'
+                : placeholder
+            }
             value={this.state.commitMessage.summary}
             onValueChanged={this.onSummaryChanged}
             onElementRef={this.onSummaryInputRef}
@@ -1835,6 +1977,7 @@ export class CommitMessage extends React.Component<
             }
             spellcheck={commitSpellcheckEnabled}
           />
+          {this.renderLocalAgentStatus()}
           {this.renderActionBar()}
         </FocusContainer>
 
@@ -1851,4 +1994,38 @@ export class CommitMessage extends React.Component<
       </div>
     )
   }
+}
+
+function formatLocalAgentSelection({ agent, model }: ILocalAgentSelection) {
+  return `${getLocalAgent(agent)?.name ?? agent}: ${model}`
+}
+
+/** Menu items for an agent's models, nested by group when they have one. */
+function buildModelMenu(
+  agent: ILocalAgent,
+  models: ReadonlyArray<ILocalAgentModel>,
+  toItem: (selection: ILocalAgentSelection, label: string) => IMenuItem
+): IMenuItem[] {
+  const items: IMenuItem[] = []
+  const groups = new Map<string, IMenuItem[]>()
+
+  for (const model of models) {
+    const item = toItem({ agent: agent.id, model: model.id }, model.label)
+    if (model.group === undefined) {
+      items.push(item)
+      continue
+    }
+
+    let group = groups.get(model.group)
+    if (group === undefined) {
+      group = []
+      groups.set(model.group, group)
+      items.push({ label: model.group, submenu: group })
+    }
+    group.push(item)
+  }
+
+  return items.length > 0
+    ? items
+    : [{ label: 'No models available', enabled: false }]
 }

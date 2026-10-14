@@ -1402,12 +1402,11 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   /**
-   * Conditionally renders a menu bar. The menu bar is currently only rendered
-   * on Windows.
+   * Conditionally renders a menu bar. The menu bar is only rendered on
+   * Windows and Linux (macOS uses the system menu bar).
    */
   private renderAppMenuBar() {
-    // We only render the app menu bar on Windows
-    if (!__WIN32__) {
+    if (!__WIN32__ && !__LINUX__) {
       return null
     }
 
@@ -1458,17 +1457,11 @@ export class App extends React.Component<IAppProps, IAppState> {
       this.state.currentFoldout &&
       this.state.currentFoldout.type === FoldoutType.AppMenu
 
-    // As Linux still uses the classic Electron menu, we are opting out of the
-    // custom menu that is shown as part of the title bar below
-    if (__LINUX__) {
-      return null
-    }
-
     // When we're in full-screen mode on Windows we only need to render
     // the title bar when the menu bar is active. On other platforms we
     // never render the title bar while in full-screen mode.
     if (inFullScreen) {
-      if (!__WIN32__ || !menuBarActive) {
+      if ((!__WIN32__ && !__LINUX__) || !menuBarActive) {
         return null
       }
     }
@@ -4028,9 +4021,6 @@ export class App extends React.Component<IAppProps, IAppState> {
           onCherryPick={this.startCherryPickWithoutBranch}
           pullRequestSuggestedNextAction={state.pullRequestSuggestedNextAction}
           showChangesFilter={state.showChangesFilter}
-          shouldShowGenerateCommitMessageCallOut={
-            !this.state.commitMessageGenerationButtonClicked
-          }
           skipCommitHooks={selectedState.state.skipCommitHooks}
           signOffCommits={selectedState.state.signOffCommits}
           allowEmptyCommit={selectedState.state.allowEmptyCommit}

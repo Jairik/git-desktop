@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { ILocalAgentSelection } from '../../lib/local-agent'
 import * as Path from 'path'
 
 import { Dispatcher } from '../dispatcher'
@@ -162,7 +163,6 @@ interface IFilterChangesListProps {
   readonly hookProgress: HookProgress | null
   readonly onShowCommitProgress?: (() => void) | undefined
   readonly isGeneratingCommitMessage: boolean
-  readonly shouldShowGenerateCommitMessageCallOut: boolean
   readonly commitToAmend: Commit | null
   readonly currentBranchProtected: boolean
   readonly currentRepoRulesInfo: RepoRulesInfo
@@ -899,7 +899,6 @@ export class FilterChangesList extends React.Component<
       commitToAmend,
       currentBranchProtected,
       currentRepoRulesInfo: currentRepoRulesInfo,
-      shouldShowGenerateCommitMessageCallOut,
     } = this.props
 
     if (rebaseConflictState !== null) {
@@ -974,9 +973,6 @@ export class FilterChangesList extends React.Component<
         hookProgress={hookProgress}
         onShowCommitProgress={this.props.onShowCommitProgress}
         isGeneratingCommitMessage={isGeneratingCommitMessage}
-        shouldShowGenerateCommitMessageCallOut={
-          shouldShowGenerateCommitMessageCallOut
-        }
         commitToAmend={commitToAmend}
         showCoAuthoredBy={this.props.showCoAuthoredBy}
         coAuthors={this.props.coAuthors}
@@ -999,8 +995,10 @@ export class FilterChangesList extends React.Component<
           this.onConfirmCommitWithUnknownCoAuthors
         }
         onPersistCommitMessage={this.onPersistCommitMessage}
-        onGenerateCommitMessage={this.onGenerateCommitMessage}
         onCancelGenerateCommitMessage={this.onCancelGenerateCommitMessage}
+        onGenerateCommitMessageWithLocalAgent={
+          this.onGenerateCommitMessageWithLocalAgent
+        }
         onCommitMessageFocusSet={this.onCommitMessageFocusSet}
         onRefreshAuthor={this.onRefreshAuthor}
         onShowPopup={this.onShowPopup}
@@ -1050,23 +1048,15 @@ export class FilterChangesList extends React.Component<
   private onPersistCommitMessage = (message: ICommitMessage) =>
     this.props.dispatcher.setCommitMessage(this.props.repository, message)
 
-  private onGenerateCommitMessage = (
+  private onGenerateCommitMessageWithLocalAgent = (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean
+    selection: ILocalAgentSelection
   ) => {
-    this.props.dispatcher.incrementMetric(
-      'generateCommitMessageButtonClickCount'
+    this.props.dispatcher.generateCommitMessageWithLocalAgent(
+      this.props.repository,
+      filesSelected,
+      selection
     )
-
-    return mustOverrideExistingMessage
-      ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
-          this.props.repository,
-          filesSelected
-        )
-      : this.props.dispatcher.generateCommitMessage(
-          this.props.repository,
-          filesSelected
-        )
   }
 
   private onCancelGenerateCommitMessage = () => {

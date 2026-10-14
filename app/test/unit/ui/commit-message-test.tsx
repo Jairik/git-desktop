@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { afterEach, describe, it } from 'node:test'
+import { describe, it } from 'node:test'
 import * as React from 'react'
 
 import { Account } from '../../../src/models/account'
@@ -14,21 +14,20 @@ import {
   WorkingDirectoryFileChange,
 } from '../../../src/models/status'
 import { CommitMessage } from '../../../src/ui/changes/commit-message'
-
-const PreviewFeaturesEnv = 'GITHUB_DESKTOP_PREVIEW_FEATURES'
-const previousPreviewFeatures = process.env[PreviewFeaturesEnv]
+import { ILocalAgentSelection } from '../../../src/lib/local-agent'
 
 type CommitMessageProps = React.ComponentProps<typeof CommitMessage>
-type CopilotButtonProps = {
+type ButtonProps = {
   readonly ariaLabel?: string
   readonly disabled?: boolean
 }
 
 type CommitMessageTestInstance = {
-  readonly renderCopilotButton: () => React.ReactElement | null
-  readonly onCopilotButtonClick: (
+  state: CommitMessage['state']
+  readonly renderLocalAgentButton: () => React.ReactElement | null
+  readonly onLocalAgentButtonClick: (
     event: Pick<React.MouseEvent<HTMLButtonElement>, 'preventDefault'>
-  ) => Promise<void>
+  ) => void
 }
 
 function createAccount() {
@@ -95,7 +94,6 @@ function createProps(
     hookProgress: null,
     onShowCommitProgress: undefined,
     isGeneratingCommitMessage: true,
-    shouldShowGenerateCommitMessageCallOut: false,
     commitToAmend: null,
     placeholder: 'Summary',
     prepopulateCommitSummary: false,
@@ -113,7 +111,7 @@ function createProps(
     onCoAuthorsUpdated: () => {},
     onShowCoAuthoredByChanged: () => {},
     onConfirmCommitWithUnknownCoAuthors: () => {},
-    onGenerateCommitMessage: () => {},
+    onGenerateCommitMessageWithLocalAgent: () => {},
     onCancelGenerateCommitMessage: () => {},
     onCommitMessageFocusSet: () => {},
     onRefreshAuthor: () => {},
@@ -136,50 +134,60 @@ function toTestInstance(component: CommitMessage): CommitMessageTestInstance {
   return component as unknown as CommitMessageTestInstance
 }
 
-function isElementWithCopilotButtonProps(
+function isElementWithButtonProps(
   node: React.ReactNode
-): node is React.ReactElement<
-  CopilotButtonProps & { readonly className?: string }
-> {
-  return React.isValidElement(node) && node.props.className === 'copilot-button'
+): node is React.ReactElement<ButtonProps & { readonly className?: string }> {
+  return (
+    React.isValidElement(node) &&
+    (node.props as { className?: string }).className === 'local-agent-button'
+  )
 }
 
-function getCopilotButtonProps(
+function getLocalAgentButtonProps(
   component: CommitMessageTestInstance
-): CopilotButtonProps {
-  const button = component.renderCopilotButton()
+): ButtonProps {
+  const button = component.renderLocalAgentButton()
   if (button === null) {
-    throw new Error('Expected Copilot button to render')
+    throw new Error('Expected local agent button to render')
   }
 
-  const buttonElement = React.Children.toArray(button.props.children).find(
-    isElementWithCopilotButtonProps
-  )
+  const buttonElement = React.Children.toArray(
+    (button.props as { children?: React.ReactNode }).children
+  ).find(isElementWithButtonProps)
   if (buttonElement === undefined) {
-    throw new Error('Expected Copilot button element to render')
+    throw new Error('Expected local agent button element to render')
   }
 
   return buttonElement.props
 }
 
-async function clickCopilotButton(component: CommitMessageTestInstance) {
-  await component.onCopilotButtonClick({
-    preventDefault: () => {},
-  })
+function clickLocalAgentButton(component: CommitMessageTestInstance) {
+  component.onLocalAgentButtonClick({ preventDefault: () => {} })
 }
 
-afterEach(() => {
-  if (previousPreviewFeatures === undefined) {
-    delete process.env[PreviewFeaturesEnv]
-  } else {
-    process.env[PreviewFeaturesEnv] = previousPreviewFeatures
-  }
-})
-
 describe('CommitMessage', () => {
-  it('does not allow cancelling commit message generation when the Copilot SDK is disabled', async () => {
-    delete process.env[PreviewFeaturesEnv]
+  it('generates with the selected local agent when idle', () => {
+    const calls: ILocalAgentSelection[] = []
+    const component = toTestInstance(
+      new CommitMessage(
+        createProps({
+          isGeneratingCommitMessage: false,
+          onGenerateCommitMessageWithLocalAgent: (_files, selection) => {
+            calls.push(selection)
+          },
+        })
+      )
+    )
 
+    assert.equal(getLocalAgentButtonProps(component).disabled, false)
+
+    clickLocalAgentButton(component)
+
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].agent, 'opencode')
+  })
+
+  it('does not cancel a generation the local agent did not start', () => {
     let cancelCount = 0
     const component = toTestInstance(
       new CommitMessage(
@@ -191,19 +199,14 @@ describe('CommitMessage', () => {
       )
     )
 
-    const buttonProps = getCopilotButtonProps(component)
+    assert.equal(getLocalAgentButtonProps(component).disabled, true)
 
-    assert.equal(buttonProps.ariaLabel, 'Generating commit details…')
-    assert.equal(buttonProps.disabled, true)
-
-    await clickCopilotButton(component)
+    clickLocalAgentButton(component)
 
     assert.equal(cancelCount, 0)
   })
 
-  it('allows cancelling commit message generation when the Copilot SDK is enabled', async () => {
-    process.env[PreviewFeaturesEnv] = '1'
-
+  it('cancels an in-flight local agent generation', () => {
     let cancelCount = 0
     const component = toTestInstance(
       new CommitMessage(
@@ -214,13 +217,13 @@ describe('CommitMessage', () => {
         })
       )
     )
+    component.state = { ...component.state, isLocalAgentGenerating: true }
 
-    const buttonProps = getCopilotButtonProps(component)
-
+    const buttonProps = getLocalAgentButtonProps(component)
     assert.equal(buttonProps.ariaLabel, 'Cancel generating commit details')
     assert.equal(buttonProps.disabled, false)
 
-    await clickCopilotButton(component)
+    clickLocalAgentButton(component)
 
     assert.equal(cancelCount, 1)
   })

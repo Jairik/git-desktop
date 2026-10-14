@@ -64,20 +64,35 @@ function migrateAutomaticallySwitchSetting(): string | null {
 // in localStorage.
 const applicationThemeKey = 'theme'
 
+// Set once this fork has switched an existing install over to dark mode, so a
+// later explicit choice of 'system' is respected.
+const darkDefaultAppliedKey = 'theme-dark-default-applied'
+
 /**
- * Returns User's theme preference or 'system' if not set or parsable
+ * Returns User's theme preference, or dark if not set or parsable. Upstream
+ * defaults to 'system' and persists it on first launch, so that value is
+ * migrated to dark once.
  */
 function getApplicationThemeSetting(): ApplicationTheme {
   const themeSetting = localStorage.getItem(applicationThemeKey)
+  const darkDefaultApplied = localStorage.getItem(darkDefaultAppliedKey)
+
+  if (darkDefaultApplied === null) {
+    localStorage.setItem(darkDefaultAppliedKey, '1')
+    if (themeSetting !== ApplicationTheme.Light) {
+      return ApplicationTheme.Dark
+    }
+  }
 
   if (
     themeSetting === ApplicationTheme.Light ||
-    themeSetting === ApplicationTheme.Dark
+    themeSetting === ApplicationTheme.Dark ||
+    themeSetting === ApplicationTheme.System
   ) {
     return themeSetting
   }
 
-  return ApplicationTheme.System
+  return ApplicationTheme.Dark
 }
 
 /**

@@ -259,18 +259,7 @@ async function handleCommandLineArguments(argv: string[]) {
     // sure that Chromium won't add more switches later on which is why we have
     // to resort to looking through all arguments looking for something that
     // appears to be an app url.
-    const prefixes = Array.from(possibleProtocols, p => `${p}://`)
-    const matchingUrl = argv.find(arg => {
-      if (prefixes.some(p => arg.startsWith(p))) {
-        try {
-          new URL(arg)
-          return true
-        } catch {
-          log.error(`Unable to parse argument as URL: ${arg}`)
-        }
-      }
-      return false
-    })
+    const matchingUrl = findAppUrlArgument(argv)
 
     if (matchingUrl) {
       handleAppURL(matchingUrl)
@@ -280,6 +269,16 @@ async function handleCommandLineArguments(argv: string[]) {
     // If --protocol-launcher is present we always want to bail and not
     // risk a smuggled cli switch
     return
+  }
+
+  // On Linux the desktop entry's URL handler (`Exec=... %U`) passes the app
+  // url (e.g. the OAuth callback) as a plain argument.
+  if (__LINUX__) {
+    const matchingUrl = findAppUrlArgument(argv)
+    if (matchingUrl) {
+      handleAppURL(matchingUrl)
+      return
+    }
   }
 
   if (typeof args['cli-open'] === 'string') {
@@ -294,6 +293,22 @@ async function handleCommandLineArguments(argv: string[]) {
   }
 
   return
+}
+
+/** Find an argument that looks like one of our protocol urls. */
+function findAppUrlArgument(argv: ReadonlyArray<string>) {
+  const prefixes = Array.from(possibleProtocols, p => `${p}://`)
+  return argv.find(arg => {
+    if (prefixes.some(p => arg.startsWith(p))) {
+      try {
+        new URL(arg)
+        return true
+      } catch {
+        log.error(`Unable to parse argument as URL: ${arg}`)
+      }
+    }
+    return false
+  })
 }
 
 function handleCLIAction(action: CLIAction) {

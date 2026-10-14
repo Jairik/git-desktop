@@ -22,6 +22,11 @@ import type {
   CopilotQuotaSnapshotsByAccount,
 } from './copilot-store'
 import {
+  generateCommitMessageWithLocalAgent,
+  ILocalAgentSelection,
+  LocalAgentCancelledError,
+} from '../local-agent'
+import {
   CommitMessageGenerationCancelledError,
   getCopilotAccountCacheKey,
   migrateCopilotModelSelectionsToAccounts,
@@ -6498,6 +6503,51 @@ export class AppStore extends TypedBaseStore<IAppState> {
             repository,
           })
         )
+        return false
+      }
+
+      return true
+    })
+  }
+
+  /** This shouldn't be called directly. See 'Dispatcher'. */
+  public async _generateCommitMessageWithLocalAgent(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    selection: ILocalAgentSelection
+  ): Promise<boolean> {
+    return this.withIsGeneratingCommitMessage(repository, async signal => {
+      try {
+        const commitToAmend =
+          this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
+          undefined
+        const diff = await getFilesDiffText(
+          repository,
+          filesSelected,
+          commitToAmend ? `${commitToAmend}^` : undefined
+        )
+        if (!diff) {
+          return false
+        }
+
+        const response = await generateCommitMessageWithLocalAgent(
+          selection,
+          diff,
+          repository.path,
+          signal
+        )
+
+        this._setCommitMessage(repository, {
+          summary: response.title,
+          description: response.description,
+          timestamp: Date.now(),
+        })
+      } catch (e) {
+        if (e instanceof LocalAgentCancelledError) {
+          return false
+        }
+
+        this.emitError(new ErrorWithMetadata(e, { repository }))
         return false
       }
 

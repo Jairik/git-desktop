@@ -15,6 +15,12 @@
     border-bottom: 1px solid #000;
   }
 
+  @include linux {
+    height: var(--win32-title-bar-height);
+    background: var(--win32-title-bar-background-color);
+    border-bottom: 1px solid #000;
+  }
+
   @include win32 {
     height: var(--win32-title-bar-height);
     background: var(--win32-title-bar-background-color);
@@ -123,6 +129,11 @@
 
 #desktop-app-title-bar.light-title-bar {
   @include darwin {
+    background: transparent;
+    border-bottom: none;
+  }
+
+  @include linux {
     background: transparent;
     border-bottom: none;
   }

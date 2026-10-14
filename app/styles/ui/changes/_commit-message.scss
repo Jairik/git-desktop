@@ -166,6 +166,129 @@
     width: auto !important;
   }
 
+  .local-agent-button,
+  .local-agent-model-button {
+    color: var(--text-secondary-color);
+
+    &:not([aria-disabled='true']):hover {
+      color: var(--text-color);
+    }
+  }
+
+  .local-agent-model-button {
+    width: 12px !important;
+  }
+
+  // While a local agent writes the message, swap the description field for a
+  // live status card and run a slow gradient around the box.
+  &.local-agent-generating {
+    .description-focus-container {
+      border-color: transparent;
+      background: linear-gradient(var(--background-color), var(--background-color)) padding-box, linear-gradient(90deg, #a371f7, #58a6ff, #3fb950, #d29922, #a371f7) border-box;
+      background-size: 100% 100%, 400% 100%;
+      animation: local-agent-border 6s linear infinite;
+    }
+
+    .description-field {
+      display: none;
+    }
+  }
+
+  .local-agent-status {
+    min-height: 80px;
+    padding: var(--spacing) var(--spacing-double);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-half);
+    font-size: var(--font-size-sm);
+    cursor: default;
+    overflow: hidden;
+  }
+
+  .local-agent-status-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-half);
+    min-width: 0;
+  }
+
+  .local-agent-status-orb {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: conic-gradient(#a371f7, #58a6ff, #3fb950, #d29922, #a371f7);
+    animation: local-agent-spin 1.6s linear infinite, local-agent-pulse 1.6s ease-in-out infinite;
+  }
+
+  .local-agent-status-agent {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .local-agent-status-model {
+    color: var(--text-secondary-color);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .local-agent-status-elapsed {
+    margin-left: auto;
+    color: var(--text-secondary-color);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .local-agent-status-step {
+    animation: local-agent-fade-in 250ms ease-out;
+  }
+
+  .local-agent-status-dots::after {
+    content: '';
+    display: inline-block;
+    width: 1.5em;
+    text-align: left;
+    animation: local-agent-dots 1.2s steps(4, end) infinite;
+  }
+
+  .local-agent-status-detail {
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-xs);
+  }
+
+  .local-agent-status-draft {
+    margin: 0;
+    max-height: 5.5em;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column-reverse;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary-color);
+  }
+
+  .local-agent-status-caret {
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    vertical-align: text-bottom;
+    background: var(--text-secondary-color);
+    animation: local-agent-blink 1s steps(1) infinite;
+  }
+
+  @media (prefers-reduced-motion) {
+    .local-agent-status-orb,
+    .local-agent-status-dots::after,
+    .local-agent-status-caret,
+    &.local-agent-generating .description-focus-container {
+      animation: none;
+    }
+  }
+
   .co-authors-toggle,
   .commit-options-button {
     color: var(--text-secondary-color);
@@ -283,6 +406,8 @@
 
     .co-authors-toggle,
     .copilot-button,
+    .local-agent-button,
+    .local-agent-model-button,
     .commit-options-button {
       // button reset styles
       border: none;
@@ -332,5 +457,54 @@
       // In order to center it vertically in the button
       margin-bottom: 1px;
     }
+  }
+}
+
+@keyframes local-agent-border {
+  from {
+    background-position: 0 0, 0% 0;
+  }
+  to {
+    background-position: 0 0, 400% 0;
+  }
+}
+
+@keyframes local-agent-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes local-agent-pulse {
+  50% {
+    box-shadow: 0 0 6px 1px rgba(88, 166, 255, 0.6);
+  }
+}
+
+@keyframes local-agent-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@keyframes local-agent-dots {
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+}
+
+@keyframes local-agent-blink {
+  50% {
+    opacity: 0;
   }
 }

@@ -1,4 +1,5 @@
 import { Disposable } from 'event-kit'
+import { ILocalAgentSelection } from '../../lib/local-agent'
 
 import {
   IAPIOrganization,
@@ -1198,6 +1199,19 @@ export class Dispatcher {
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
   ) {
     return this.appStore._generateCommitMessage(repository, filesSelected)
+  }
+
+  /** Generate a commit message using a local CLI agent (opencode, agy). */
+  public generateCommitMessageWithLocalAgent(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    selection: ILocalAgentSelection
+  ) {
+    return this.appStore._generateCommitMessageWithLocalAgent(
+      repository,
+      filesSelected,
+      selection
+    )
   }
 
   public cancelGenerateCommitMessage(repository: Repository) {

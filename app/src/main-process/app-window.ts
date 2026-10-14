@@ -61,7 +61,8 @@ export class AppWindow {
       show: false,
       // This fixes subpixel aliasing on Windows
       // See https://github.com/atom/atom/commit/683bef5b9d133cb194b476938c77cc07fd05b972
-      backgroundColor: '#fff',
+      // Dark to match the default theme and avoid a white flash on launch.
+      backgroundColor: '#24292e',
       webPreferences: {
         // Disable auxclick event
         // See https://developers.google.com/web/updates/2016/10/auxclick
@@ -79,6 +80,9 @@ export class AppWindow {
       windowOptions.frame = false
     } else if (__LINUX__) {
       windowOptions.icon = path.join(__dirname, 'static', 'icon-logo.png')
+      // Tiling compositors like Hyprland don't draw decorations, so drop the
+      // GTK frame and its light native menu bar in favor of the in-app one.
+      windowOptions.frame = false
     }
 
     this.window = new BrowserWindow(windowOptions)
@@ -174,7 +178,8 @@ export class AppWindow {
     })
 
     this.window.webContents.once('did-finish-load', () => {
-      if (process.env.NODE_ENV === 'development') {
+      // Dev tools are opt-in; they can still be toggled from the View menu.
+      if (process.env.DESKTOP_OPEN_DEVTOOLS === '1') {
         this.window.webContents.openDevTools()
       }
 
