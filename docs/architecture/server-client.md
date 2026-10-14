@@ -274,6 +274,13 @@ Comments are stored per-repo in the daemon data dir.
 - `comment.delete` `{ path, id }` → `{}`
 - `comment.send` `{ path, id }` → `Comment`  (runs the `comment` task using the comment as the ask; fills `reply` + `agent`, sets `status` to `sent`)
 
+**Notes:** the `file` values in `agent.summarize_file` and `comment.*` (which read
+file contents into agent context) are confined to the repository — absolute paths
+and `..` are rejected as defense-in-depth, even though paths are otherwise treated
+as trusted on a local single-user daemon; `agent.review` builds its file context via
+`git` diff/show. Comments and the agent config are persisted atomically (temp file
++ rename) under the data dir.
+
 ---
 
 ## Client behavior
