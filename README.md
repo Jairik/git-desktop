@@ -7,17 +7,20 @@ This repository is a personal fork of
 [React](https://reactjs.org/).
 
 > **This fork has been condensed into a minimal local server-client client: a
-> Rust backend daemon plus a React web client. See
-> [`docs/architecture/README.md`](docs/architecture/README.md).** The legacy
-> Electron app in [`app/`](app) is retained for reference and incremental
-> porting, but the active product shape is the `server/` + `client/` split.
+> Rust backend daemon, a React web client, and a thin Electron shell. See
+> [`docs/architecture/README.md`](docs/architecture/README.md) and
+> [`docs/BUILD.md`](docs/BUILD.md).** The legacy Electron app in [`app/`](app) is
+> retained for reference and incremental porting, but the active product shape is
+> the `server/` + `client/` (+ `desktop/`) split.
 >
 > The one big difference from upstream: upstream is a single Electron app (UI +
 > git engine in one process); this fork splits that into `server/` (a Rust
 > `axum` daemon that runs the `git` CLI and exposes a documented JSON-RPC API on
 > `127.0.0.1:4789`) and `client/` (a standalone React/TypeScript/Vite web client
-> that is a thin client over that API). GitHub-specific features (accounts, PRs,
-> CI, Copilot) are deliberately not part of this MVP.
+> that is a thin client over that API). GitHub-specific features are thin and
+> optional: PRs/CI surface through the `gh` CLI, and local AI agents (the
+> `opencode`/`claude`/`codex` CLIs, auto-detected) add commit-message generation,
+> file comments and reviews. None of it is part of the core local Git engine.
 
 <picture>
   <source
