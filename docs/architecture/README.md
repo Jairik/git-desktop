@@ -4,7 +4,10 @@ This fork has been condensed into a **minimal, well-documented server-client
 Git client**. It keeps the git engine a git engine and adds a small, explicit
 boundary so the product is easy to build on. GitHub support is thin and optional
 (surfaced via the `gh` CLI — Pull Requests and CI checks); the deep GitHub
-integrations were dropped, so pure-local Git works fully offline.
+integrations were dropped, so pure-local Git works fully offline. Optional local
+AI agents (the `opencode`/`claude`/`codex`/`cursor-agent` CLIs) add commit-message
+generation, file comments and reviews. The same React client runs in the browser
+and inside a thin Electron shell.
 
 ```
 ┌────────────────────────┐         JSON-RPC (POST /rpc)          ┌──────────────────────────┐
@@ -26,6 +29,8 @@ integrations were dropped, so pure-local Git works fully offline.
 |------|------|-------|
 | [`server/`](../../server) | `gitdaemon` — the local backend. Git engine + JSON-RPC API + repo store. | Rust, axum, tokio (shells out to the `git` CLI) |
 | `client/` | The React web client. A thin client; every op is an RPC call. | React 18 + TypeScript + Vite |
+| `desktop/` | Thin **Electron shell**: spawns the daemon and serves `client/dist`. Reuses the web UI — no duplicated code. | Node / Electron |
+| [`../BUILD.md`](../BUILD.md) | Build & run reference for server, client, and desktop. | — |
 | [`server-client.md`](server-client.md) | The authoritative wire contract (transport, methods, JSON shapes). | — |
 | [`scripts/e2e-smoke.sh`](scripts/e2e-smoke.sh) | End-to-end regression test (`yarn e2e`). | bash |
 
@@ -52,6 +57,15 @@ The Pull Requests and Checks/CI views need the `gh` CLI installed and logged in
 (`gh auth login`) on the machine running the daemon; otherwise the client shows
 setup steps instead.
 
+### One binary, or the desktop shell
+
+`yarn build` (release daemon + client) then `yarn serve` serves the UI *and* the
+API from a single `gitdaemon`; open <http://127.0.0.1:4789/>. Or run the Electron
+desktop shell with `yarn desktop` (it spawns the daemon and opens the same UI in a
+window). Local AI agents are auto-detected from `PATH` and configured in the
+**Agents** tab (see `server/agents.toml`). Full details in
+[`../BUILD.md`](../BUILD.md).
+
 ## Design principles (why it's shaped this way)
 
 - **Minimal + explicit.** One transport (`POST /rpc`), one push channel
@@ -63,6 +77,9 @@ setup steps instead.
   future optimization for read-heavy paths, but is not required.
 - **Thin client.** The React client holds no git logic; it renders results and
   re-fetches after mutations (per the contract's client-behavior rules).
+- **Thin shells over external CLIs.** The daemon shells out to `git`, `gh`, and the
+  AI agent CLIs; it reimplements none of them. Adding a capability is usually one
+  subprocess wrapper, not a new dependency.
 - **Easy to extend.** Adding capability is mechanical and localized — see below.
 - **Decoupled.** The client never imports the legacy `app/` bundle, and the two
   halves can evolve independently as long as they honor the contract.
@@ -95,7 +112,10 @@ branches (list/create/rename/checkout/delete local+remote, ahead/behind);
 remotes CRUD; tags CRUD; stash; config + author identity; and network ops
 fetch/pull/push/clone with live progress over WebSocket. When the `gh` CLI is
 installed and authenticated on the server machine, it also lists Pull Requests and
-per-branch CI checks. See the full method list
+per-branch CI checks. Auto-detected local AI agents (`agent.*` methods) generate
+commit messages, summarize/review files, commits and PRs, and reply to per-file
+comments. The same client runs in the browser and in a thin Electron shell
+(`desktop/`). See the full method list
 in the contract.
 
 ## Not (yet) implemented — and where it lives in the legacy code
@@ -124,6 +144,11 @@ given so future work knows exactly what to port behind a new contract method:
   auto-update: legacy `lib/editors`, `lib/shells`, `lib/notifications`,
   `stores/token-store`. These need a host integration point on the daemon side.
 - **Tutorial / blank-slate onboarding**, telemetry/stats, crash reporting.
+- **Agent depth** — streaming/token-level agent output, agent run history, and
+  multi-file / agent-scoped tasks (the generic per-task config is the seam).
+- **Desktop packaging** — app icons, code-signing/notarization, auto-update, and
+  electron-builder config for `.dmg`/`.AppImage`/`.exe` (the shell runs today via
+  `yarn desktop`).
 
 ## Verifying
 
