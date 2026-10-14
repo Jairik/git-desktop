@@ -14,13 +14,19 @@ import type {
   AheadBehind,
   Branch,
   ChangedFilesResult,
+  CiStatus,
   Commit,
   CommitIdentity,
   CommitOneLine,
   Diff,
   FileChange,
+  GitHubRemote,
+  GitHubStatus,
   HealthResult,
   IStatusResult,
+  PullRequest,
+  PullRequestDetail,
+  PullRequestState,
   Remote,
   Repository,
   RepositoryType,
@@ -38,6 +44,9 @@ export type RpcErrorCode =
   | 'io_error'
   | 'conflict'
   | 'internal_error'
+  /* GitHub (`gh` CLI) failures */
+  | 'auth_required'
+  | 'gh_error'
   /* client-only codes */
   | 'unreachable'
   | 'http_error'
@@ -325,4 +334,31 @@ export const methods = {
     }),
   clone: (url: string, path: string, options?: { branch?: string; defaultBranch?: string }) =>
     rpc<Repository>('clone', { url, path, ...(options ? { options } : {}) }),
+
+  /* GitHub — thin wrappers over the server's `gh` CLI. These fail with
+     `auth_required` (gh missing/unauthenticated, or no GitHub remote) or
+     `gh_error` (gh itself failed); the store maps both onto a setup hint. */
+  githubStatus: () => rpc<GitHubStatus>('github.status', {}),
+  githubRemote: (path: string) => rpc<GitHubRemote | null>('github.remote', { path }),
+  prList: (params: {
+    path: string
+    state?: PullRequestState
+    limit?: number
+    branch?: string
+  }) =>
+    rpc<PullRequest[]>('pr.list', {
+      path: params.path,
+      ...(params.state ? { state: params.state } : {}),
+      ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      ...(params.branch ? { branch: params.branch } : {}),
+    }),
+  prView: (params: { path: string; number: number }) =>
+    rpc<PullRequestDetail | null>('pr.view', { path: params.path, number: params.number }),
+  prCheckout: (params: { path: string; number: number }) =>
+    rpc<{ branch: string }>('pr.checkout', { path: params.path, number: params.number }),
+  ciStatus: (params: { path: string; ref?: string }) =>
+    rpc<CiStatus>('ci.status', {
+      path: params.path,
+      ...(params.ref ? { ref: params.ref } : {}),
+    }),
 }

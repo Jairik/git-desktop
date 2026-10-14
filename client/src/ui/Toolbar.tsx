@@ -6,7 +6,8 @@
 
 import { useState } from 'react'
 import { methods } from '../api/client'
-import { splitUpstream, useStore } from '../state/store'
+import type { CiStatus } from '../api/types'
+import { splitUpstream, useStore, type AppState } from '../state/store'
 import { Button, Spinner } from './common'
 
 export function Toolbar() {
@@ -62,6 +63,11 @@ export function Toolbar() {
       ? 'HEAD (detached)'
       : 'Unborn branch'
 
+  // The CI roll-up is per-ref: only show it when it was read for the
+  // tip that is checked out right now, so a stale result can't pass as
+  // the current branch's state.
+  const ci = currentBranchChecks(state)
+
   return (
     <div className="toolbar">
       <span className="branch-chip" title={`Current branch: ${branchLabel}`}>
@@ -69,6 +75,12 @@ export function Toolbar() {
         <span className="branch-name">{branchLabel}</span>
         <span className="branch-type">local</span>
       </span>
+
+      {ci ? (
+        <span className="chip ci-chip" title={`CI roll-up: ${ci.rollUp}`}>
+          ● {ci.rollUp}
+        </span>
+      ) : null}
 
       {status?.currentTip ? (
         <span className="sha-pill" title={`Tip: ${status.currentTip}`}>
@@ -160,4 +172,17 @@ export function Toolbar() {
       )}
     </div>
   )
+}
+
+/**
+ * The loaded CI roll-up — but only when it was read for the tip that is
+ * checked out right now (CI is per-ref), so a stale result can't pass
+ * as the current branch's state.
+ */
+function currentBranchChecks(state: AppState): CiStatus | null {
+  const ci = state.ci
+  if (ci === null || ci.headSha === null) return null
+  const tip = state.status?.currentTip ?? null
+  if (tip === null || ci.headSha !== tip) return null
+  return ci
 }

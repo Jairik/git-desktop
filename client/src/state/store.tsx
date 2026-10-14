@@ -33,16 +33,22 @@ import {
 import { onProgress, setProgressBaseUrl } from '../api/progress'
 import type {
   Branch,
+  CiStatus,
   Commit,
+  GitHubRemote,
+  GitHubStatus,
   IStatusResult,
   ProgressPayload,
+  PullRequest,
+  PullRequestDetail,
+  PullRequestState,
   Remote,
   Repository,
   StashEntry,
   TagMap,
 } from '../api/types'
 
-export type View = 'changes' | 'history' | 'branches' | 'stash' | 'tags'
+export type View = 'changes' | 'history' | 'branches' | 'stash' | 'tags' | 'prs' | 'checks'
 
 /** Progress events pushed by the server on `/ws`. */
 export type ProgressEventName =
@@ -76,6 +82,27 @@ export interface AppState {
   tags: TagMap
   stashes: StashEntry[]
 
+  /**
+   * GitHub state, driven by the server's `gh` CLI (`github.status` /
+   * `github.remote`). `ghReady` = available && authenticated && the repo
+   * has a GitHub remote; `ghMessage` is the friendly "what to do next"
+   * hint shown by the Pull Requests / Checks tabs when it isn't ready.
+   * Never loaded automatically on repo switch — the tabs ask for it.
+   */
+  ghStatus: GitHubStatus | null
+  ghRemote: GitHubRemote | null
+  ghReady: boolean
+  ghMessage: string | null
+
+  prs: PullRequest[]
+  prsLoading: boolean
+  /** Active `pr.list` state filter. */
+  prsState: PullRequestState
+  selectedPr: PullRequestDetail | null
+
+  ci: CiStatus | null
+  ciLoading: boolean
+
   activeView: View
   /** Label of the in-flight mutation (e.g. 'Pulling…'), or null. */
   busy: string | null
@@ -101,6 +128,16 @@ const initialState: AppState = {
   remotes: [],
   tags: {},
   stashes: [],
+  ghStatus: null,
+  ghRemote: null,
+  ghReady: false,
+  ghMessage: null,
+  prs: [],
+  prsLoading: false,
+  prsState: 'open',
+  selectedPr: null,
+  ci: null,
+  ciLoading: false,
   activeView: 'changes',
   busy: null,
   progress: {},
@@ -124,12 +161,60 @@ type Action =
       tags?: TagMap
       stashes?: StashEntry[]
     }
+  | {
+      type: 'github-status'
+      status: GitHubStatus | null
+      remote: GitHubRemote | null
+      /** Explicit message; omitted → derived from status/remote. */
+      message?: string | null
+    }
+  | { type: 'github-message'; message: string | null }
+  | { type: 'prs-loading' }
+  | { type: 'prs-loaded'; prs: PullRequest[] }
+  | { type: 'prs-state'; prsState: PullRequestState }
+  | { type: 'pr-selected'; pr: PullRequestDetail | null }
+  | { type: 'ci-loading' }
+  | { type: 'ci-loaded'; ci: CiStatus | null }
   | { type: 'view'; view: View }
   | { type: 'busy'; label: string | null }
   | { type: 'progress'; event: ProgressEventName; data: ProgressPayload }
   | { type: 'progress-clear'; event: ProgressEventName }
   | { type: 'error'; error: AppError }
   | { type: 'dismiss-error'; id: number }
+
+/**
+ * Next step for the user when the server's `gh` CLI can't serve GitHub
+ * data — drives the setup panel on the Pull Requests / Checks tabs.
+ * Returns `null` when everything needed is in place.
+ */
+function githubSetupMessage(
+  status: GitHubStatus | null,
+  remote: GitHubRemote | null,
+): string | null {
+  if (!status) return null
+  if (!status.available) {
+    return 'Install the GitHub CLI (`gh`) on the machine running the server.'
+  }
+  if (!status.authenticated) {
+    return 'Run `gh auth login` on the server machine.'
+  }
+  if (!remote) {
+    return 'This repository has no GitHub remote — `origin` must point at github.com.'
+  }
+  return null
+}
+
+/** Friendly message for the GitHub-specific RPC failures (else `null`). */
+function githubSetupError(error: unknown): string | null {
+  if (!(error instanceof RpcError)) return null
+  if (error.code === 'auth_required') {
+    return 'The server cannot use the GitHub CLI (`gh`) right now — install `gh` on the machine running the server and run `gh auth login` there.'
+  }
+  if (error.code === 'gh_error') {
+    return `The GitHub CLI on the server failed: ${error.message}`
+  }
+  return null
+}
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -164,6 +249,17 @@ function reducer(state: AppState, action: Action): AppState {
         remotes: [],
         tags: {},
         stashes: [],
+        // GitHub data is per-repo and only loaded when a GitHub tab is
+        // opened — drop whatever the previous repo had.
+        ghStatus: null,
+        ghRemote: null,
+        ghReady: false,
+        ghMessage: null,
+        prs: [],
+        prsLoading: false,
+        selectedPr: null,
+        ci: null,
+        ciLoading: false,
       }
     case 'repo-loading':
       return { ...state, loadingRepoData: true }
@@ -178,6 +274,33 @@ function reducer(state: AppState, action: Action): AppState {
         tags: action.tags !== undefined ? action.tags : state.tags,
         stashes: action.stashes !== undefined ? action.stashes : state.stashes,
       }
+    case 'github-status': {
+      const ghReady =
+        action.status !== null && action.status.available && action.status.authenticated
+      const message =
+        action.message !== undefined ? action.message : githubSetupMessage(action.status, action.remote)
+      return {
+        ...state,
+        ghStatus: action.status,
+        ghRemote: action.remote,
+        ghReady,
+        ghMessage: message,
+      }
+    }
+    case 'github-message':
+      return { ...state, ghMessage: action.message }
+    case 'prs-loading':
+      return { ...state, prsLoading: true }
+    case 'prs-loaded':
+      return { ...state, prsLoading: false, prs: action.prs }
+    case 'prs-state':
+      return { ...state, prsState: action.prsState, selectedPr: null }
+    case 'pr-selected':
+      return { ...state, selectedPr: action.pr }
+    case 'ci-loading':
+      return { ...state, ciLoading: true }
+    case 'ci-loaded':
+      return { ...state, ciLoading: false, ci: action.ci }
     case 'view':
       return { ...state, activeView: action.view }
     case 'busy':
@@ -222,6 +345,24 @@ export interface StoreActions {
   setView: (view: View) => void
   /** Remove a progress card from the transient progress map. */
   dismissProgress: (event: ProgressEventName) => void
+
+  /**
+   * Load `github.status` + `github.remote` for a repo. Failures of the
+   * GitHub-specific codes (`auth_required` / `gh_error`) are folded into
+   * `ghMessage`; transport failures surface as a toast and leave the
+   * GitHub state empty. Called when a GitHub tab is opened.
+   */
+  loadGitHubStatus: (path: string) => Promise<void>
+  /** Load `pr.list` for a repo + state filter. */
+  loadPullRequests: (path: string, state?: PullRequestState) => Promise<void>
+  /** Load `pr.view` into `selectedPr` (null when the PR is gone). */
+  viewPullRequest: (path: string, number: number) => Promise<void>
+  /** `pr.checkout` as a mutation (refreshes the repo) then reload CI. */
+  checkoutPullRequest: (path: string, number: number) => Promise<void>
+  /** Load `ci.status` (defaults to the repo's current branch). */
+  loadCiStatus: (path: string, ref?: string) => Promise<void>
+  /** Set the active `pr.list` filter (drops the selected PR). */
+  setPullRequestState: (state: PullRequestState) => void
 
   /**
    * Run a mutating RPC: sets the busy label, catches errors into the
@@ -488,6 +629,115 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /* ------------------------------------------------------------------ */
+  /* GitHub (via the server's `gh` CLI)                                  */
+  /* ------------------------------------------------------------------ */
+
+  const loadGitHubStatus = useCallback(
+    async (path: string) => {
+      let status: GitHubStatus | null = null
+      try {
+        status = await methods.githubStatus()
+      } catch (error) {
+        const friendly = githubSetupError(error)
+        if (friendly) {
+          dispatch({ type: 'github-message', message: friendly })
+          return
+        }
+        // Transport/server failure: leave the GitHub state empty so the
+        // tabs show a neutral "not available" state (the server-down
+        // banner already explains what happened).
+        dispatch({ type: 'github-status', status: null, remote: null, message: null })
+        pushError(error)
+        return
+      }
+
+      let remote: GitHubRemote | null = null
+      try {
+        remote = await methods.githubRemote(path)
+      } catch (error) {
+        const friendly = githubSetupError(error)
+        // `not_found` ("origin is not a GitHub remote") is already
+        // explained by the derived message — no toast on top of it.
+        const quiet = error instanceof RpcError && error.code === 'not_found'
+        dispatch({ type: 'github-status', status, remote: null, message: friendly })
+        if (!friendly && !quiet) pushError(error)
+        return
+      }
+
+      dispatch({ type: 'github-status', status, remote })
+    },
+    [pushError],
+  )
+
+  const loadPullRequests = useCallback(
+    async (path: string, prsState: PullRequestState = 'open') => {
+      dispatch({ type: 'prs-loading' })
+      try {
+        const prs = await methods.prList({ path, state: prsState })
+        dispatch({ type: 'prs-loaded', prs })
+      } catch (error) {
+        dispatch({ type: 'prs-loaded', prs: [] })
+        const friendly = githubSetupError(error)
+        if (friendly) dispatch({ type: 'github-message', message: friendly })
+        else pushError(error)
+      }
+    },
+    [pushError],
+  )
+
+  const viewPullRequest = useCallback(
+    async (path: string, number: number) => {
+      try {
+        const pr = await methods.prView({ path, number })
+        dispatch({ type: 'pr-selected', pr })
+      } catch (error) {
+        dispatch({ type: 'pr-selected', pr: null })
+        const friendly = githubSetupError(error)
+        if (friendly) dispatch({ type: 'github-message', message: friendly })
+        else pushError(error)
+      }
+    },
+    [pushError],
+  )
+
+  const loadCiStatus = useCallback(
+    async (path: string, ref?: string) => {
+      dispatch({ type: 'ci-loading' })
+      try {
+        const ci = await methods.ciStatus({ path, ...(ref ? { ref } : {}) })
+        dispatch({ type: 'ci-loaded', ci })
+      } catch (error) {
+        dispatch({ type: 'ci-loaded', ci: null })
+        const friendly = githubSetupError(error)
+        if (friendly) dispatch({ type: 'github-message', message: friendly })
+        else pushError(error)
+      }
+    },
+    [pushError],
+  )
+
+  // `pr.checkout` switches the working tree, so it goes through
+  // runMutation (which refreshes the repo) — the CI roll-up is then
+  // re-read for the branch that is now checked out.
+  const checkoutPullRequest = useCallback(
+    async (path: string, number: number) => {
+      const ok = await runMutation('Checkout PR', () => methods.prCheckout({ path, number }))
+      if (ok === null) return
+      const branch = stateRef.current.status?.currentBranch
+      await loadCiStatus(path, branch ?? undefined)
+      await loadPullRequests(path, stateRef.current.prsState)
+      // Re-read the detail so its head SHA / review state match the
+      // branch that is now checked out.
+      await viewPullRequest(path, number)
+    },
+    [loadCiStatus, loadPullRequests, runMutation, viewPullRequest],
+  )
+
+  const setPullRequestState = useCallback((prsState: PullRequestState) => {
+    dispatch({ type: 'prs-state', prsState })
+  }, [])
+
+  /* ------------------------------------------------------------------ */
   /* Wiring                                                             */
   /* ------------------------------------------------------------------ */
 
@@ -575,6 +825,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAlias,
       setView,
       dismissProgress,
+      loadGitHubStatus,
+      loadPullRequests,
+      viewPullRequest,
+      checkoutPullRequest,
+      loadCiStatus,
+      setPullRequestState,
       runMutation,
       pushError,
       dismissError,
@@ -594,6 +850,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAlias,
       setView,
       dismissProgress,
+      loadGitHubStatus,
+      loadPullRequests,
+      viewPullRequest,
+      checkoutPullRequest,
+      loadCiStatus,
+      setPullRequestState,
       runMutation,
       pushError,
       dismissError,

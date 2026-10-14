@@ -2,9 +2,9 @@
 
 This fork has been condensed into a **minimal, well-documented server-client
 Git client**. It keeps the git engine a git engine and adds a small, explicit
-boundary so the product is easy to build on. Everything here is free of
-GitHub-specific concerns (no GitHub API/auth/PRs/copilot/CI) — those were
-deliberately dropped from this MVP.
+boundary so the product is easy to build on. GitHub support is thin and optional
+(surfaced via the `gh` CLI — Pull Requests and CI checks); the deep GitHub
+integrations were dropped, so pure-local Git works fully offline.
 
 ```
 ┌────────────────────────┐         JSON-RPC (POST /rpc)          ┌──────────────────────────┐
@@ -13,7 +13,7 @@ deliberately dropped from this MVP.
 │                        │         {ok,result} / {ok,error}      │  • HTTP router + dispatch│
 │  Changes / History /   │                                       │  • GitRunner (git CLI)   │
 │  Branches / Remotes /  │  ◀════════ WebSocket /ws ══════════▶   │  • repository store      │
-│  Stash / Tags          │       progress: clone/fetch/push/pull  │  • 47 RPC methods        │
+│  Stash / Tags          │       progress: clone/fetch/push/pull  │  • 53 RPC methods        │
 └────────────────────────┘                                       └────────────┬─────────────┘
         thin client                                                          │ subprocess
                                                                              ▼
@@ -48,6 +48,10 @@ down the client shows a "Cannot reach the git server" banner — nothing blocks.
 Utility scripts at the repo root: `yarn daemon:build`, `yarn daemon:release`,
 `yarn web:typecheck`, `yarn e2e`.
 
+The Pull Requests and Checks/CI views need the `gh` CLI installed and logged in
+(`gh auth login`) on the machine running the daemon; otherwise the client shows
+setup steps instead.
+
 ## Design principles (why it's shaped this way)
 
 - **Minimal + explicit.** One transport (`POST /rpc`), one push channel
@@ -79,7 +83,7 @@ Two small edits plus one optional UI edit — all follow the existing pattern.
 4. **UI (optional).** Call it from a store action (use `runMutation(...)` so data
    refreshes) or render it in a `client/src/ui/*Tab.tsx` view.
 
-The 47 existing methods in `server/src/rpc.rs` are the reference pattern — copy
+The 53 existing methods in `server/src/rpc.rs` are the reference pattern — copy
 the closest one.
 
 ## What's covered
@@ -89,7 +93,9 @@ status with per-file stage/unstage/discard; text/image/binary diffs; commit
 (with amend/empty); history with per-commit file diffs, undo (revert) and reset;
 branches (list/create/rename/checkout/delete local+remote, ahead/behind);
 remotes CRUD; tags CRUD; stash; config + author identity; and network ops
-fetch/pull/push/clone with live progress over WebSocket. See the full method list
+fetch/pull/push/clone with live progress over WebSocket. When the `gh` CLI is
+installed and authenticated on the server machine, it also lists Pull Requests and
+per-branch CI checks. See the full method list
 in the contract.
 
 ## Not (yet) implemented — and where it lives in the legacy code
@@ -97,9 +103,11 @@ in the contract.
 This MVP intentionally parks the following. The legacy TypeScript references are
 given so future work knows exactly what to port behind a new contract method:
 
-- **GitHub platform** — auth/accounts, pull requests, CI/check runs, forks,
-  secret scanning, Copilot: legacy `app/src/lib/api`, `lib/ci-checks`,
-  `stores/pull-request-store`, `stores/accounts-store`. Explicitly out of scope.
+- **GitHub platform (deep)** — beyond the `gh`-backed PR list/view/checkout and CI
+  checks now implemented, these stay out of scope: in-app account auth, PR
+  review/comment UI, the forks flow, secret scanning, Copilot: legacy
+  `app/src/lib/api`, `lib/ci-checks`, `stores/pull-request-store`,
+  `stores/accounts-store`.
 - **Advanced history ops UI** — interactive rebase, squash, reorder, cherry-pick:
   legacy `app/src/lib/git/{rebase,squash,reorder,cherry-pick,merge-tree}.ts`. The
   daemon already has `commit.undo`/`commit.resetTo`; conflict-driven multi-commit

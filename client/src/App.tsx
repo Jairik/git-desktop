@@ -9,10 +9,12 @@
 
 import { BranchesTab } from './ui/BranchesTab'
 import { ChangesTab, RepoNotices } from './ui/ChangesTab'
+import { ChecksTab } from './ui/ChecksTab'
 import { EmptyState, Spinner } from './ui/common'
 import { HistoryTab } from './ui/HistoryTab'
 import { ProgressBars } from './ui/ProgressBars'
 import { ErrorToasts } from './ui/ErrorToasts'
+import { PullRequestsTab } from './ui/PullRequestsTab'
 import { ServerBanner } from './ui/ServerBanner'
 import { Sidebar } from './ui/Sidebar'
 import { StashTab } from './ui/StashTab'
@@ -86,6 +88,8 @@ function Tabs() {
     { view: 'changes', label: 'Changes', count: fileCount },
     { view: 'history', label: 'History', count: state.commits.length },
     { view: 'branches', label: 'Branches', count: state.branches.length },
+    { view: 'prs', label: 'Pull Requests', count: state.prs.length },
+    { view: 'checks', label: 'Checks / CI' },
     { view: 'stash', label: 'Stash', count: state.stashes.length },
     { view: 'tags', label: 'Tags', count: Object.keys(state.tags).length },
   ]
@@ -119,6 +123,10 @@ function ActiveView() {
       return <HistoryTab />
     case 'branches':
       return <BranchesTab />
+    case 'prs':
+      return <PullRequestsTab />
+    case 'checks':
+      return <ChecksTab />
     case 'stash':
       return <StashTab />
     case 'tags':

@@ -193,6 +193,75 @@ export interface ChangedFilesResult {
 export type AuthorIdentity = CommitIdentity | null
 
 /* ------------------------------------------------------------------ */
+/* GitHub (via the `gh` CLI on the server)                             */
+/* ------------------------------------------------------------------ */
+
+/** `github.status` — can the server use the GitHub CLI, and as whom? */
+export interface GitHubStatus {
+  available: boolean
+  authenticated: boolean
+  user: string | null
+}
+
+/** `github.remote` — `owner/name` parsed from the repo's `origin`. */
+export interface GitHubRemote {
+  owner: string
+  name: string
+  hostname: string
+}
+
+/** The `state` query param of `pr.list` (and a PR's own state). */
+export type PullRequestState = 'open' | 'closed' | 'merged'
+
+export interface PullRequest {
+  number: number
+  title: string
+  state: PullRequestState
+  isDraft: boolean
+  url: string
+  headRefName: string
+  baseRefName: string
+  author: { login: string } | null
+  /** ISO-8601 */
+  createdAt: string
+  /** ISO-8601 */
+  updatedAt: string
+  additions: number
+  deletions: number
+  changedFiles: number
+  mergeable: string | null
+}
+
+/** `pr.view` — a pull request plus its body/comments/review state. */
+export interface PullRequestDetail extends PullRequest {
+  body: string
+  comments: number
+  reviewDecision: string | null
+  headSha: string | null
+}
+
+export type CheckStatus = 'queued' | 'in_progress' | 'completed'
+export type CheckKind = 'check_run' | 'status'
+/** Roll-up of every check for a ref. */
+export type CiRollUp = 'success' | 'pending' | 'failure'
+
+export interface Check {
+  name: string
+  status: CheckStatus
+  conclusion: string | null
+  detailsUrl: string | null
+  startedAt: string | null
+  completedAt: string | null
+  kind: CheckKind
+}
+
+export interface CiStatus {
+  headSha: string | null
+  rollUp: CiRollUp
+  checks: Check[]
+}
+
+/* ------------------------------------------------------------------ */
 /* Transport-level shapes                                              */
 /* ------------------------------------------------------------------ */
 

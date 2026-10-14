@@ -29,7 +29,10 @@ git engine — the server shells out to the `git` CLI behind a clean abstraction
 - **Errors** use these `code` values: `bad_request` (malformed/unknown method),
   `not_found` (repo/ref missing), `git_error` (git command failed; `data.stderr`
   carries git's stderr, `data.args` carries the argv), `io_error`, `conflict`,
-  and `internal_error` (unexpected server-side failure/panic).
+  and `internal_error` (unexpected server-side failure/panic). GitHub methods add
+  `auth_required` (the `gh` CLI is missing/unauthenticated, or the repo has no
+  GitHub remote) and `gh_error` (the `gh` CLI itself failed; `data.stderr` carries
+  gh's stderr).
 
 All paths sent by the client are **absolute server-side paths**. The server treats
 them as trusted (local single-user daemon).
@@ -120,6 +123,16 @@ Diff              = TextDiff | LargeTextDiff | ImageDiff | BinaryDiff | Submodul
 
 ChangedFilesResult= { files: FileChange[], linesAdded: number, linesDeleted: number }
 AuthorIdentity    = CommitIdentity | null
+GitHubStatus      = { available: boolean, authenticated: boolean, user: string | null }
+GitHubRemote      = { owner: string, name: string, hostname: string }
+PullRequest       = { number: number, title: string, state: "open"|"closed"|"merged", isDraft: boolean,
+                      url: string, headRefName: string, baseRefName: string,
+                      author: { login: string } | null, createdAt: string, updatedAt: string,
+                      additions: number, deletions: number, changedFiles: number, mergeable: string | null }
+PullRequestDetail = PullRequest & { body: string, comments: number, reviewDecision: string | null, headSha: string | null }
+Check             = { name: string, status: "queued"|"in_progress"|"completed", conclusion: string | null,
+                      detailsUrl: string | null, startedAt: string | null, completedAt: string | null, kind: "check_run"|"status" }
+CiStatus          = { headSha: string | null, rollUp: "success"|"pending"|"failure", checks: Check[] }
 ```
 
 ---
@@ -197,6 +210,19 @@ working-tree path (or git dir for bare). Numbers default as noted.
 - `pull` `{ path, remote? }` → `{}`  (`git pull`; omitting `remote` pulls the branch's configured upstream)
 - `push` `{ path, remote, localBranch, remoteBranch?: string | null, tagsToPush?: string[], forceWithLease? = false }` → `{}`
 - `clone` `{ url, path, options?: { branch?, defaultBranch? } }` → `Repository`  (register in store on success)
+
+### GitHub — via the `gh` CLI (thin, no deep GitHub API client)
+These require the `gh` CLI on the server's PATH, authenticated (`gh auth login`).
+`owner/repo` is derived from the repo's `origin` remote URL. If `origin` isn't a
+GitHub remote the methods return `not_found`; if `gh` is missing/unauthenticated
+they return `auth_required`; other gh failures return `gh_error` (with `data.stderr`).
+
+- `github.status` `{}` → `GitHubStatus`  (`gh --version` for `available`, `gh auth token` for `authenticated`, best-effort `gh api user` for `user`)
+- `github.remote` `{ path }` → `GitHubRemote | null`  (parses origin; null if not a github.com remote)
+- `pr.list` `{ path, state? = "open", limit? = 30, branch? }` → `PullRequest[]`  (`gh pr list --repo owner/name --json …`)
+- `pr.view` `{ path, number }` → `PullRequestDetail | null`  (`gh pr view <n> --repo … --json …`)
+- `pr.checkout` `{ path, number }` → `{ branch: string }`  (`gh pr checkout <n>`; returns the local branch now checked out)
+- `ci.status` `{ path, ref? }` → `CiStatus`  (combined check-runs + commit statuses for `ref`, default = current branch; `rollUp` folds conclusions)
 
 ---
 

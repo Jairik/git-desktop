@@ -463,3 +463,118 @@ pub struct CommitMessage {
     #[serde(default)]
     pub description: String,
 }
+
+/// The result of `github.status` — whether the `gh` CLI can be used.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubStatus {
+    /// Whether the `gh` CLI is installed on the server's PATH.
+    pub available: bool,
+    /// Whether `gh` is authenticated (`gh auth token` succeeds).
+    pub authenticated: bool,
+    /// The authenticated GitHub login, resolved best-effort (null on failure).
+    pub user: Option<String>,
+}
+
+/// The `origin` GitHub remote of a repository.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRemote {
+    /// The repository owner (a user or an organization).
+    pub owner: String,
+    /// The repository name.
+    pub name: String,
+    /// The remote hostname (e.g. `github.com`).
+    pub hostname: String,
+}
+
+/// The author of a pull request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Author {
+    /// The GitHub login of the author.
+    pub login: String,
+}
+
+/// A pull request summary, as returned by `pr.list`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequest {
+    /// The pull request number.
+    pub number: i64,
+    /// The title.
+    pub title: String,
+    /// The normalized state: `open`, `closed` or `merged`.
+    pub state: String,
+    /// Whether the pull request is a draft.
+    pub is_draft: bool,
+    /// The web URL of the pull request.
+    pub url: String,
+    /// The name of the head (source) branch.
+    pub head_ref_name: String,
+    /// The name of the base (target) branch.
+    pub base_ref_name: String,
+    /// The author, or null when it could not be resolved.
+    pub author: Option<Author>,
+    /// The ISO-8601 creation timestamp.
+    pub created_at: String,
+    /// The ISO-8601 last-updated timestamp.
+    pub updated_at: String,
+    /// Lines added.
+    pub additions: i64,
+    /// Lines deleted.
+    pub deletions: i64,
+    /// Number of changed files.
+    pub changed_files: i64,
+    /// gh's mergeable state (`MERGEABLE`, `CONFLICTED`, ...) or null.
+    pub mergeable: Option<String>,
+}
+
+/// A pull request with its detail fields, as returned by `pr.view`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDetail {
+    /// The pull request fields shared with [`PullRequest`].
+    #[serde(flatten)]
+    pub base: PullRequest,
+    /// The pull request body (Markdown); may be empty.
+    pub body: String,
+    /// The number of comments (gh reports a list, an object or a count).
+    pub comments: i64,
+    /// The review decision (`APPROVED`, `CHANGES_REQUESTED`, ...) or null.
+    pub review_decision: Option<String>,
+    /// The SHA of the head commit, or null.
+    pub head_sha: Option<String>,
+}
+
+/// A single CI check: a GitHub check run or a legacy commit status.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Check {
+    /// The name of the check.
+    pub name: String,
+    /// The normalized status: `queued`, `in_progress` or `completed`.
+    pub status: String,
+    /// The normalized conclusion (`success`, `failure`, ...) or null.
+    pub conclusion: Option<String>,
+    /// A link to the check's details page, or null.
+    pub details_url: Option<String>,
+    /// The ISO-8601 start time, or null.
+    pub started_at: Option<String>,
+    /// The ISO-8601 completion time, or null.
+    pub completed_at: Option<String>,
+    /// The source of the check: `check_run` or `status`.
+    pub kind: String,
+}
+
+/// The combined CI status of a commit.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CiStatus {
+    /// The SHA the checks were resolved against, or null.
+    pub head_sha: Option<String>,
+    /// The rolled-up state: `success`, `pending` or `failure`.
+    pub roll_up: String,
+    /// The individual checks (check runs first, then commit statuses).
+    pub checks: Vec<Check>,
+}

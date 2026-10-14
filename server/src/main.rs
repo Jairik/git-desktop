@@ -13,6 +13,7 @@
 
 mod error;
 mod git;
+mod github;
 mod handlers;
 mod log;
 mod models;

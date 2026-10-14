@@ -20,3 +20,5 @@ pub mod stash;
 pub mod config;
 /// Network methods (fetch/pull/push/clone).
 pub mod network;
+/// GitHub methods, implemented thinly over the `gh` CLI.
+pub mod github;

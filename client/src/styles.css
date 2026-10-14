@@ -976,6 +976,122 @@ select {
   font-size: 11px;
 }
 
+/* --------------------- pull requests / checks / CI ----------------- */
+.prs-filter {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.pr-row .pr-number {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.pr-row .pr-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.pr-row .pr-title {
+  color: var(--text-strong);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-row .pr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.pr-row .status-badge {
+  flex: none;
+}
+
+.status-badge.open {
+  color: var(--green);
+}
+.status-badge.merged {
+  color: var(--purple);
+}
+.status-badge.closed {
+  color: var(--red);
+}
+.status-badge.draft {
+  color: var(--gray);
+}
+
+.ci-roll-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ci-roll-up.success {
+  color: var(--green);
+}
+.ci-roll-up.pending {
+  color: var(--orange);
+}
+.ci-roll-up.failure {
+  color: var(--red);
+}
+
+.check-row .check-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.check-badge.success {
+  color: var(--green);
+}
+.check-badge.pending {
+  color: var(--orange);
+}
+.check-badge.failure {
+  color: var(--red);
+}
+.check-badge.neutral {
+  color: var(--gray);
+}
+
+.ci-chip.success {
+  color: var(--green);
+}
+.ci-chip.pending {
+  color: var(--orange);
+}
+.ci-chip.failure {
+  color: var(--red);
+}
+
 /* ------------------------------ forms ----------------------------- */
 .field {
   display: grid;

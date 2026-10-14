@@ -17,6 +17,11 @@ pub enum ErrorCode {
     Conflict,
     /// A `git` invocation failed.
     GitError,
+    /// The `gh` CLI is missing or not authenticated, or the repository has no
+    /// GitHub remote.
+    AuthRequired,
+    /// The `gh` CLI itself exited with a non-success code.
+    GhError,
     /// Local filesystem or I/O failure.
     IoError,
     /// Unexpected server-side failure.
@@ -31,6 +36,8 @@ impl ErrorCode {
             ErrorCode::NotFound => "not_found",
             ErrorCode::Conflict => "conflict",
             ErrorCode::GitError => "git_error",
+            ErrorCode::AuthRequired => "auth_required",
+            ErrorCode::GhError => "gh_error",
             ErrorCode::IoError => "io_error",
             ErrorCode::Internal => "internal_error",
         }
@@ -61,6 +68,22 @@ pub enum ApiError {
         /// The argv (without the leading `git -C <path>`) used for the call.
         args: Vec<String>,
         /// The exit code git reported.
+        code: i32,
+    },
+
+    /// The `gh` CLI is missing or unauthenticated (or the repo has no GitHub
+    /// remote), so a GitHub method cannot run.
+    #[error("{message}")]
+    AuthRequired { message: String },
+
+    /// A gh command exited with a non-success code.
+    #[error("gh command failed: {stderr}")]
+    GhError {
+        /// Gh's stderr, trimmed.
+        stderr: String,
+        /// The argv (without the leading `gh`) used for the call.
+        args: Vec<String>,
+        /// The exit code gh reported.
         code: i32,
     },
 
@@ -95,6 +118,23 @@ impl ApiError {
         }
     }
 
+    /// Builds an `auth_required` error (gh missing/unauthenticated, or no
+    /// GitHub remote).
+    pub fn auth_required(message: impl Into<String>) -> Self {
+        ApiError::AuthRequired {
+            message: message.into(),
+        }
+    }
+
+    /// Builds a `gh_error` result carrying gh's stderr and argv.
+    pub fn gh_error(stderr: impl Into<String>, args: Vec<String>, code: i32) -> Self {
+        ApiError::GhError {
+            stderr: stderr.into(),
+            args,
+            code,
+        }
+    }
+
     /// The error code used on the wire.
     pub fn code(&self) -> ErrorCode {
         match self {
@@ -102,22 +142,18 @@ impl ApiError {
             ApiError::NotFound { .. } => ErrorCode::NotFound,
             ApiError::Conflict { .. } => ErrorCode::Conflict,
             ApiError::GitError { .. } => ErrorCode::GitError,
+            ApiError::AuthRequired { .. } => ErrorCode::AuthRequired,
+            ApiError::GhError { .. } => ErrorCode::GhError,
             ApiError::IoError { .. } => ErrorCode::IoError,
             ApiError::Internal { .. } => ErrorCode::Internal,
         }
     }
 
-    /// Human readable message; for git errors this is git's stderr.
+    /// Human readable message; for git/gh errors this is the tool's stderr.
     pub fn message(&self) -> String {
         match self {
-            ApiError::GitError { stderr, .. } => {
-                let trimmed = stderr.trim();
-                if trimmed.is_empty() {
-                    "git command failed".to_string()
-                } else {
-                    trimmed.to_string()
-                }
-            }
+            ApiError::GitError { stderr, .. } => trimmed_or(stderr, "git command failed"),
+            ApiError::GhError { stderr, .. } => trimmed_or(stderr, "gh command failed"),
             other => other.to_string(),
         }
     }
@@ -125,9 +161,11 @@ impl ApiError {
     /// Optional structured payload attached to the error.
     pub fn data(&self) -> Option<Value> {
         match self {
-            ApiError::GitError {
-                stderr, args, ..
-            } => Some(json!({
+            ApiError::GitError { stderr, args, .. } => Some(json!({
+                "stderr": stderr,
+                "args": args,
+            })),
+            ApiError::GhError { stderr, args, .. } => Some(json!({
                 "stderr": stderr,
                 "args": args,
             })),
@@ -166,5 +204,15 @@ impl From<serde_json::Error> for ApiError {
         ApiError::Internal {
             message: format!("failed to serialize result: {error}"),
         }
+    }
+}
+
+/// Returns the trimmed `stderr`, or `fallback` when it is empty/whitespace.
+fn trimmed_or(stderr: &str, fallback: &str) -> String {
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        fallback.to_string()
+    } else {
+        trimmed.to_string()
     }
 }

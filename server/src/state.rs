@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 use crate::git::GitRunner;
+use crate::github::GhRunner;
 use crate::store::RepositoryStore;
 
 /// The number of progress events buffered for slow WebSocket clients.
@@ -58,6 +59,8 @@ impl Default for EventBus {
 pub struct AppState {
     /// Runs the git commands.
     pub runner: GitRunner,
+    /// Runs the gh (GitHub CLI) commands.
+    pub gh: GhRunner,
     /// The repository store, guarded by a blocking mutex (all users are short).
     pub store: Mutex<RepositoryStore>,
     /// The directory the store is persisted to.
@@ -79,6 +82,7 @@ impl AppState {
 
         AppState {
             runner: GitRunner,
+            gh: GhRunner,
             store: Mutex::new(store),
             data_dir,
             events: EventBus::new(),

@@ -164,6 +164,14 @@ async fn dispatch_inner(state: &AppState, method: &str, params: Value) -> Result
         "push" => handlers::network::push(state, params).await,
         "clone" => handlers::network::clone(state, params).await,
 
+        // GitHub (thin over the `gh` CLI)
+        "github.status" => handlers::github::github_status(state, params).await,
+        "github.remote" => handlers::github::github_remote(state, params).await,
+        "pr.list" => handlers::github::pr_list(state, params).await,
+        "pr.view" => handlers::github::pr_view(state, params).await,
+        "pr.checkout" => handlers::github::pr_checkout(state, params).await,
+        "ci.status" => handlers::github::ci_status(state, params).await,
+
         _ => Err(ApiError::bad_request(format!("unknown method: {method}"))),
     }
 }
