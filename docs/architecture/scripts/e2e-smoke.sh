@@ -46,6 +46,7 @@ for _ in $(seq 1 50); do curl -sf "$BASE/health" >/dev/null && break; sleep 0.2;
 echo "== driving workflow =="
 check "health"     '"ok":true'        "$(curl -sf "$BASE/health")"
 check "github.status" '"available"'   "$(rpc github.status '{}')"
+check "agent.list"    '"agents"'       "$(rpc agent.list '{}')"
 check "repo.open"  '"ok":true'        "$(rpc repo.open "{\"path\":\"$TMP/repo\"}")"
 
 printf 'line1\nCHANGED\n' > "$TMP/repo/a.txt"; printf 'new\n' > "$TMP/repo/c.txt"
