@@ -51,7 +51,15 @@
     "web": "cd client && npm run dev",
     "web:build": "cd client && npm run build",
     "web:typecheck": "cd client && npm run typecheck",
-    "e2e": "bash docs/architecture/scripts/e2e-smoke.sh"
+    "e2e": "bash docs/architecture/scripts/e2e-smoke.sh",
+    "build": "yarn build:server && yarn build:client",
+    "build:server": "cd server && cargo build --release",
+    "build:client": "cd client && npm run build",
+    "serve": "cd server && GITDAEMON_SERVE_DIR=\"$PWD/../client/dist\" ./target/release/gitdaemon",
+    "serve:dev": "cd server && GITDAEMON_SERVE_DIR=\"$PWD/../client/dist\" cargo run",
+    "desktop": "cd desktop && npm start",
+    "desktop:check": "cd desktop && npm run check",
+    "desktop:smoke": "node desktop/scripts/smoke-spawn.js"
   },
   "author": {
     "name": "GitHub, Inc.",
