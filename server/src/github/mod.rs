@@ -225,6 +225,17 @@ fn run_gh_blocking(opts: GhOptions) -> std::io::Result<GhOutput> {
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
+    // Run gh in its own process group so a timeout can take down the whole
+    // tree. gh may spawn subprocesses that inherit the pipes, and killing only
+    // the direct child leaves those grandchildren holding stdout/stderr open —
+    // which blocks the reader threads below forever. Mirrors `run_agent_blocking`.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        command.process_group(0);
+    }
+
     // Fails with NotFound here when gh isn't installed; mapped by the caller.
     let mut child = command.spawn()?;
 
@@ -260,9 +271,15 @@ fn run_gh_blocking(opts: GhOptions) -> std::io::Result<GhOutput> {
             }
             None => {
                 if Instant::now() >= deadline {
-                    // Kill the child (closing its pipes wakes the reader
-                    // threads), reap it, and report the timeout.
+                    // Kill the whole process group (TERM, then KILL) so every
+                    // grandchild holding a pipe dies too; only then join the
+                    // readers, which EOF once the group is gone. Reaping the
+                    // child afterwards keeps it from lingering as a zombie.
+                    #[cfg(unix)]
+                    let pid = child.id();
                     let _ = child.kill();
+                    #[cfg(unix)]
+                    kill_process_group(pid);
                     let _ = child.wait();
                     join(stdout_handle);
                     join(stderr_handle);
@@ -284,6 +301,24 @@ fn join(handle: Option<std::thread::JoinHandle<String>>) -> String {
     handle
         .map(|handle| handle.join().unwrap_or_default())
         .unwrap_or_default()
+}
+
+/// Signals a `gh` process' whole process group, best effort and without `libc`.
+///
+/// The child is spawned with `process_group(0)`, so its pid is also its group
+/// id: `kill -TERM -<pid>` reaches every descendant. TERM first (a graceful
+/// wind-down), then KILL so nothing can outlive the timeout. Mirrors
+/// `agents::kill_process_group`.
+#[cfg(unix)]
+fn kill_process_group(pid: u32) {
+    let group = format!("-{pid}");
+
+    let _ = Command::new("kill").arg("-TERM").arg(&group).status();
+
+    // A short grace period for the group to exit on TERM.
+    std::thread::sleep(Duration::from_millis(100));
+
+    let _ = Command::new("kill").arg("-KILL").arg(&group).status();
 }
 
 /// Parses NDJSON output into JSON values.

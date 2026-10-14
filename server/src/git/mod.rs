@@ -276,11 +276,13 @@ pub(crate) fn is_empty_history(stderr: &str) -> bool {
     is_missing_repository(&stderr) || stderr.contains("does not have any commits yet")
 }
 
-/// Rejects a value git would read as one of its own options.
+/// Rejects a value git would read as one of its own options or as a refspec
+/// force marker.
 ///
 /// argv is handed to git without a shell, but a value like `--upload-pack=…`
-/// still becomes an option, so every client supplied ref, name or sha has to
-/// be validated (or separated with `--`/`--end-of-options`) before use.
+/// still becomes an option, and a value like `+main` becomes a *force* refspec
+/// (`git push +main` force-pushes). So every client supplied ref, name or sha
+/// has to be validated (or separated with `--`/`--end-of-options`) before use.
 pub fn reject_option(value: &str) -> Result<(), ApiError> {
     if value.is_empty() {
         return Err(ApiError::bad_request("value must not be empty"));
@@ -289,6 +291,12 @@ pub fn reject_option(value: &str) -> Result<(), ApiError> {
     if value.starts_with('-') {
         return Err(ApiError::bad_request(format!(
             "value must not start with '-': {value}"
+        )));
+    }
+
+    if value.starts_with('+') {
+        return Err(ApiError::bad_request(format!(
+            "value must not start with '+': {value}"
         )));
     }
 

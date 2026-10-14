@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
-use axum::http::{header, Method};
+use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::http::request::Parts as RequestParts;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -172,6 +172,61 @@ fn is_loopback_origin(origin: &header::HeaderValue, _request: &RequestParts) -> 
     )
 }
 
+/// Whether an `Origin` header can only have been produced by an http loopback
+/// page.
+///
+/// This is the stricter sibling of [`is_loopback_origin`] used for *execution*
+/// guards: unlike the CORS predicate it rejects the opaque `null` origin (which
+/// a sandboxed iframe on a hostile site can produce). The client is always
+/// served over http loopback (daemon SPA, Vite dev server, or Electron), so
+/// rejecting `null` breaks no supported path.
+fn is_strict_loopback_origin(origin: &header::HeaderValue) -> bool {
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+
+    // No scheme at all is the opaque `null` origin (or garbage) — reject it.
+    let Some((_scheme, rest)) = origin.split_once("://") else {
+        return false;
+    };
+
+    if !origin.starts_with("http://") {
+        return false;
+    }
+
+    // Strip the port, remembering that an IPv6 host is bracketed.
+    let host = match rest.rsplit_once(':') {
+        Some((host, _port)) => host,
+        None => rest,
+    };
+
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "localhost" | "127.0.0.1" | "[::1]"
+    )
+}
+
+/// Rejects a request whose `Origin` header is present but names a non-loopback
+/// (cross-site) origin.
+///
+/// CORS only filters *responses*; it does not stop a request from executing, so
+/// a hostile page could still fire a CORS "simple request" (`text/plain`, no
+/// preflight) at `/rpc` and have the daemon run it. This guard runs *before*
+/// dispatch: a missing `Origin` (curl, non-browser callers, our e2e) is allowed,
+/// and a present one must be an http loopback origin.
+fn reject_cross_site_origin(headers: &HeaderMap) -> Option<Response> {
+    let origin = headers.get(header::ORIGIN)?;
+
+    if is_strict_loopback_origin(origin) {
+        return None;
+    }
+
+    log::warn("rejected cross-site request")
+        .field("origin", origin.to_str().unwrap_or("<invalid>").to_string());
+
+    Some((StatusCode::FORBIDDEN, "Forbidden").into_response())
+}
+
 /// Writes `~/.gitdaemon/server.json` so the client can discover the daemon.
 ///
 /// Best-effort: failing to write it is not fatal.
@@ -213,7 +268,15 @@ async fn info_handler(State(state): State<Arc<AppState>>) -> Response {
 }
 
 /// `POST /rpc` — dispatches a single method call.
-async fn rpc_handler(State(state): State<Arc<AppState>>, body: axum::body::Bytes) -> Response {
+async fn rpc_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Some(forbidden) = reject_cross_site_origin(&headers) {
+        return forbidden;
+    }
+
     let request = match RpcRequest::parse(&body) {
         Ok(request) => request,
         Err(error) => return Json(error_response(Value::Null, &error)).into_response(),
@@ -242,8 +305,13 @@ async fn rpc_handler(State(state): State<Arc<AppState>>, body: axum::body::Bytes
 /// `GET /ws` — upgrades the connection and forwards progress events to it.
 async fn ws_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     socket: WebSocketUpgrade,
 ) -> Response {
+    if let Some(forbidden) = reject_cross_site_origin(&headers) {
+        return forbidden;
+    }
+
     socket
         .on_upgrade(move |socket| handle_socket(socket, Arc::clone(&state)))
 }

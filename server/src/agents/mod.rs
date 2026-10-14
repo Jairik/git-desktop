@@ -48,7 +48,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -605,7 +605,22 @@ pub fn load_config(data_dir: &Path) -> Result<AgentsConfig, ApiError> {
     } else if persist_path.is_file() {
         crate::log::debug("loading agents config from data dir")
             .field("path", persist_path.display().to_string());
-        parse_config_file(&persist_path)?
+        // A persisted file that no longer parses (e.g. a crash during a
+        // non-atomic write) must not brick every agent method: quarantine it
+        // and fall back to the built-in defaults.
+        match parse_config_file(&persist_path) {
+            Ok(raw) => raw,
+            Err(error) => {
+                crate::log::warn(
+                    "Failed to parse agents config; quarantining it and using defaults",
+                )
+                .field("path", persist_path.display().to_string())
+                .field("error", error.to_string());
+                quarantine_corrupt_config(&persist_path);
+
+                parse_toml(DEFAULT_CONFIG)?
+            }
+        }
     } else {
         parse_toml(DEFAULT_CONFIG)?
     };
@@ -630,12 +645,47 @@ pub fn write_config(data_dir: &Path, config: &AgentsConfig) -> Result<(), ApiErr
         std::fs::create_dir_all(parent)?;
     }
 
-    std::fs::write(&path, text)?;
+    // Atomic write: a crash mid-write must never leave a truncated TOML file
+    // (which `load_config` would then have to quarantine). Write a sibling
+    // `<path>.tmp` and rename it over the target — `rename` is atomic within a
+    // directory. Mirrors `handlers::comments::save_comments`.
+    let mut temp = path.clone().into_os_string();
+    temp.push(".tmp");
+    let temp = PathBuf::from(temp);
+
+    std::fs::write(&temp, text).inspect_err(|_| {
+        // Never leave a stray temp file behind on a failed write.
+        let _ = std::fs::remove_file(&temp);
+    })?;
+
+    if let Err(error) = std::fs::rename(&temp, &path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(ApiError::from(error));
+    }
 
     crate::log::info("wrote agents config")
         .field("path", path.display().to_string());
 
     Ok(())
+}
+
+/// Renames an unparsable agents-config file aside so it can still be inspected,
+/// keeping the original name recognizable. Best effort: a failed rename leaves
+/// the file in place, and the caller already recovers with the defaults.
+fn quarantine_corrupt_config(path: &Path) {
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+
+    let mut quarantined = path.to_path_buf().into_os_string();
+    quarantined.push(format!(".corrupt-{unix}"));
+
+    if let Err(error) = std::fs::rename(path, PathBuf::from(quarantined)) {
+        crate::log::warn("Failed to quarantine corrupt agents config")
+            .field("path", path.display().to_string())
+            .field("error", error.to_string());
+    }
 }
 
 /// The read-only config override path from the environment, if set and non-empty.

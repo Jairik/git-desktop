@@ -264,6 +264,8 @@ type Action =
   | { type: 'repo-loading' }
   | {
       type: 'repo-data'
+      /** The repo this data belongs to; a mismatch is dropped (stale refresh). */
+      path: string
       status?: IStatusResult | null
       branches?: Branch[]
       commits?: Commit[]
@@ -405,6 +407,10 @@ function reducer(state: AppState, action: Action): AppState {
     case 'repo-loading':
       return { ...state, loadingRepoData: true }
     case 'repo-data':
+      // A slow refresh for a previously-selected repo can resolve after the
+      // user has switched to another one; never paint its data under the repo
+      // now selected.
+      if (action.path !== state.selectedRepoPath) return state
       return {
         ...state,
         loadingRepoData: false,
@@ -681,45 +687,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // degrade quietly to empty lists.
       try {
         const status = await methods.statusGet(repoPath)
-        dispatch({ type: 'repo-data', status })
+        dispatch({ type: 'repo-data', path: repoPath, status })
       } catch (error) {
-        dispatch({ type: 'repo-data', status: null })
+        dispatch({ type: 'repo-data', path: repoPath, status: null })
         pushError(error)
       }
 
       try {
         const branches = await methods.branchList(repoPath)
-        dispatch({ type: 'repo-data', branches })
+        dispatch({ type: 'repo-data', path: repoPath, branches })
       } catch {
-        dispatch({ type: 'repo-data', branches: [] })
+        dispatch({ type: 'repo-data', path: repoPath, branches: [] })
       }
 
       try {
         const commits = await methods.logList(repoPath)
-        dispatch({ type: 'repo-data', commits })
+        dispatch({ type: 'repo-data', path: repoPath, commits })
       } catch {
-        dispatch({ type: 'repo-data', commits: [] })
+        dispatch({ type: 'repo-data', path: repoPath, commits: [] })
       }
 
       try {
         const remotes = await methods.remoteList(repoPath)
-        dispatch({ type: 'repo-data', remotes })
+        dispatch({ type: 'repo-data', path: repoPath, remotes })
       } catch {
-        dispatch({ type: 'repo-data', remotes: [] })
+        dispatch({ type: 'repo-data', path: repoPath, remotes: [] })
       }
 
       try {
         const tags = await methods.tagList(repoPath)
-        dispatch({ type: 'repo-data', tags })
+        dispatch({ type: 'repo-data', path: repoPath, tags })
       } catch {
-        dispatch({ type: 'repo-data', tags: {} })
+        dispatch({ type: 'repo-data', path: repoPath, tags: {} })
       }
 
       try {
         const stashes = await methods.stashList(repoPath)
-        dispatch({ type: 'repo-data', stashes })
+        dispatch({ type: 'repo-data', path: repoPath, stashes })
       } catch {
-        dispatch({ type: 'repo-data', stashes: [] })
+        dispatch({ type: 'repo-data', path: repoPath, stashes: [] })
       }
     },
     [pushError],

@@ -67,6 +67,11 @@ pub struct AppState {
     pub agent: AgentRunner,
     /// The repository store, guarded by a blocking mutex (all users are short).
     pub store: Mutex<RepositoryStore>,
+    /// Serializes the read-modify-write of the per-repo comment store so two
+    /// concurrent `comment.*` calls cannot lose an update (see
+    /// [`crate::handlers::comments`]). The agent run in `comment.send` happens
+    /// outside this lock.
+    pub comments_lock: tokio::sync::Mutex<()>,
     /// The cached agent-PATH scan (see `agent.list`); `None` until the first
     /// scan, cleared by `agent.config.set`.
     pub agent_cache: Mutex<Option<Vec<DetectedAgent>>>,
@@ -92,6 +97,7 @@ impl AppState {
             gh: GhRunner,
             agent: AgentRunner,
             store: Mutex::new(store),
+            comments_lock: tokio::sync::Mutex::new(()),
             agent_cache: Mutex::new(None),
             data_dir,
             events: EventBus::new(),

@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { useStore } from '../state/store'
 import { Button, Spinner } from './common'
 
-export function SummarizeFileButton({ file, ref }: { file: string; ref?: string }) {
+export function SummarizeFileButton({ file, atRef }: { file: string; atRef?: string }) {
   const { state, actions } = useStore()
   const [open, setOpen] = useState(false)
   const busy = state.fileSummaryBusy
@@ -21,7 +21,7 @@ export function SummarizeFileButton({ file, ref }: { file: string; ref?: string 
   const run = async () => {
     if (busy) return
     setOpen(true)
-    await actions.summarizeFile(file, ref)
+    await actions.summarizeFile(file, atRef)
   }
 
   return (

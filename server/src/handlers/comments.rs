@@ -73,6 +73,10 @@ pub struct CommentIdParams {
 pub async fn comment_create(state: &AppState, params: Value) -> Result<Value, ApiError> {
     let params: CreateCommentParams = params_of(params)?;
 
+    // Serialize the read-modify-write so a concurrent create/delete cannot
+    // lose an update (both would otherwise load the same list and save it).
+    let _guard = state.comments_lock.lock().await;
+
     let mut comments = load_comments(&state.data_dir, &params.path)?;
 
     let comment = Comment {
@@ -114,6 +118,9 @@ pub async fn comment_list(state: &AppState, params: Value) -> Result<Value, ApiE
 pub async fn comment_delete(state: &AppState, params: Value) -> Result<Value, ApiError> {
     let params: CommentIdParams = params_of(params)?;
 
+    // Serialize the read-modify-write (see `comment_create`).
+    let _guard = state.comments_lock.lock().await;
+
     let mut comments = load_comments(&state.data_dir, &params.path)?;
     let before = comments.len();
     comments.retain(|comment| comment.id != params.id);
@@ -149,7 +156,10 @@ pub async fn comment_send(state: &AppState, params: Value) -> Result<Value, ApiE
     let (reply, agent) = run_task(state, TASK_COMMENT, &context).await?;
 
     // Re-read the store and touch only this comment; if it was deleted while the
-    // agent ran there is nothing left to fill in.
+    // agent ran there is nothing left to fill in. The lock is taken *after* the
+    // agent run (which must not block concurrent comment edits) and held across
+    // the re-read + save so the update cannot be lost.
+    let _guard = state.comments_lock.lock().await;
     let mut comments = load_comments(&state.data_dir, &params.path)?;
     let index = comments
         .iter()

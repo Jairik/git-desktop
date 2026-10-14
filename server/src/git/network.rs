@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
-use super::{GitOutput, GitRunner};
+use super::{reject_option, GitOutput, GitRunner};
 use crate::error::ApiError;
 use crate::git::RunOptions;
 use crate::state::EventBus;
@@ -73,8 +73,15 @@ pub async fn push(
     args.push("--".to_string());
     args.push(remote.to_string());
 
+    // A branch name starting with `+` (or `-`) is read by git as a force
+    // refspec / an option, so validate both ends before building the refspec.
+    reject_option(local_branch)?;
+
     let refspec = match remote_branch {
-        Some(remote_branch) => format!("{local_branch}:{remote_branch}"),
+        Some(remote_branch) => {
+            reject_option(remote_branch)?;
+            format!("{local_branch}:{remote_branch}")
+        }
         None => local_branch.to_string(),
     };
 

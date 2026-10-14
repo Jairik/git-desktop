@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use super::{GhOptions, GhRunner};
 use crate::error::ApiError;
-use crate::git::GitRunner;
+use crate::git::{reject_option, GitRunner};
 use crate::models::{Check, CiStatus};
 
 /// The `gh api … --jq` expression projecting a check run onto the fields of a
@@ -81,6 +81,11 @@ pub async fn status(
         Some(reference) => reference.to_string(),
         None => current_branch_or_head(git, path).await,
     };
+
+    // The ref is interpolated into the `gh api repos/…/commits/<ref>/…` URL
+    // path, so reject anything git/gh would treat specially (empty, or a
+    // leading `-`, which `gh` could read as an option).
+    reject_option(&api_ref)?;
 
     // The local resolution of the same ref, for the reported head SHA.
     let head_sha = resolve_sha(git, path, &api_ref).await;

@@ -45,6 +45,14 @@ for _ in $(seq 1 50); do curl -sf "$BASE/health" >/dev/null && break; sleep 0.2;
 
 echo "== driving workflow =="
 check "health"     '"ok":true'        "$(curl -sf "$BASE/health")"
+
+# Origin guard (CSRF): a request carrying a foreign Origin must be rejected
+# before dispatch, while a loopback Origin (and no Origin, as used above) passes.
+check "rpc.rejectsForeignOrigin" '403' \
+  "$(curl -s -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' "$BASE/rpc" -H 'content-type: application/json' -d '{"id":9001,"method":"repo.list","params":{}}')"
+check "rpc.allowsLoopbackOrigin" '"ok":true' \
+  "$(curl -s -H "Origin: http://127.0.0.1:$PORT" "$BASE/rpc" -H 'content-type: application/json' -d '{"id":9002,"method":"repo.list","params":{}}')"
+
 check "github.status" '"available"'   "$(rpc github.status '{}')"
 check "agent.list"    '"agents"'       "$(rpc agent.list '{}')"
 check "repo.open"  '"ok":true'        "$(rpc repo.open "{\"path\":\"$TMP/repo\"}")"

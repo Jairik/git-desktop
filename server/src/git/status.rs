@@ -311,6 +311,10 @@ pub async fn get_status(
 
     if include_untracked {
         args.push("--untracked-files=all".to_string());
+    } else {
+        // `includeUntracked=false` must actually hide untracked files (not just
+        // ask git for the "normal" default, which still lists them).
+        args.push("--untracked-files=no".to_string());
     }
 
     args.push("--branch".to_string());

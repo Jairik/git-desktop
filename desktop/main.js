@@ -330,6 +330,29 @@ async function launch() {
       },
     })
     Menu.setApplicationMenu(applicationMenu())
+
+    // Open `target="_blank"` / `window.open` links in the OS browser instead of
+    // a new in-app window, and refuse any renderer-initiated navigation away
+    // from the daemon origin (same-origin navigations, incl. reloads, are
+    // allowed). `shell` is the Electron namespace destructured in `launch`.
+    const originOf = (value) => {
+      try {
+        return new URL(value).origin
+      } catch {
+        return null
+      }
+    }
+    const appOrigin = originOf(loadUrl)
+
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      shell.openExternal(url)
+      return { action: 'deny' }
+    })
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      if (originOf(url) === appOrigin) return
+      event.preventDefault()
+    })
+
     mainWindow.loadURL(loadUrl)
     mainWindow.on('closed', () => {
       mainWindow = null
