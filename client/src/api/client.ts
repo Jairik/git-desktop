@@ -12,12 +12,17 @@
 
 import type {
   AheadBehind,
+  AgentReview,
+  AgentsConfig,
   Branch,
   ChangedFilesResult,
   CiStatus,
   Commit,
   CommitIdentity,
+  CommitMessageResult,
   CommitOneLine,
+  Comment,
+  DetectedAgent,
   Diff,
   FileChange,
   GitHubRemote,
@@ -30,7 +35,9 @@ import type {
   Remote,
   Repository,
   RepositoryType,
+  ReviewTarget,
   StashEntry,
+  SummarizeResult,
   TagMap,
 } from './types'
 
@@ -47,6 +54,8 @@ export type RpcErrorCode =
   /* GitHub (`gh` CLI) failures */
   | 'auth_required'
   | 'gh_error'
+  /* Local agent (`agent.*` / `comment.*`) failures */
+  | 'agent_error'
   /* client-only codes */
   | 'unreachable'
   | 'http_error'
@@ -361,4 +370,51 @@ export const methods = {
       path: params.path,
       ...(params.ref ? { ref: params.ref } : {}),
     }),
+
+  /* Local agents — the daemon shells out to the machine's AI CLIs, so
+     these are slow and their output is free-form text. Failures use
+     `auth_required` (agent binary not installed), `not_found` (no agent
+     configured for the task) and `agent_error` (the CLI itself failed). */
+  agentList: () => rpc<{ agents: DetectedAgent[] }>('agent.list', {}),
+  agentConfigGet: () => rpc<AgentsConfig>('agent.config.get', {}),
+  agentConfigSet: (config: AgentsConfig) => rpc<{}>('agent.config.set', { config }),
+  agentCommitMessage: (params: { path: string; staged?: boolean }) =>
+    rpc<CommitMessageResult>('agent.commit_message', {
+      path: params.path,
+      ...(params.staged !== undefined ? { staged: params.staged } : {}),
+    }),
+  agentSummarizeFile: (params: { path: string; file: string; ref?: string }) =>
+    rpc<SummarizeResult>('agent.summarize_file', {
+      path: params.path,
+      file: params.file,
+      ...(params.ref ? { ref: params.ref } : {}),
+    }),
+  agentReview: (params: { path: string; target: ReviewTarget }) =>
+    rpc<AgentReview>('agent.review', { path: params.path, target: params.target }),
+
+  /* Comments — stored per-repo in the daemon data dir. `comment.send`
+     runs the `comment` task (slow) and returns the updated comment. */
+  commentCreate: (params: {
+    path: string
+    file: string
+    line?: number | null
+    side?: 'old' | 'new' | null
+    body: string
+  }) =>
+    rpc<Comment>('comment.create', {
+      path: params.path,
+      file: params.file,
+      ...(params.line != null ? { line: params.line } : {}),
+      ...(params.side != null ? { side: params.side } : {}),
+      body: params.body,
+    }),
+  commentList: (params: { path: string; file?: string }) =>
+    rpc<Comment[]>('comment.list', {
+      path: params.path,
+      ...(params.file ? { file: params.file } : {}),
+    }),
+  commentDelete: (params: { path: string; id: string }) =>
+    rpc<{}>('comment.delete', { path: params.path, id: params.id }),
+  commentSend: (params: { path: string; id: string }) =>
+    rpc<Comment>('comment.send', { path: params.path, id: params.id }),
 }

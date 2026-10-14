@@ -74,8 +74,13 @@ export function ChecksTab() {
 
   // CI is per-ref: read it for the branch that is currently checked out
   // (the server defaults to it, we pass it explicitly for clarity).
+  // Guarded so re-opening the tab does not re-read an unchanged branch.
+  const ciLoadedFor = useRef<string | null>(null)
   useEffect(() => {
     if (!state.ghReady || state.ghMessage) return
+    const key = `${path}:${branch ?? ''}`
+    if (ciLoadedFor.current === key) return
+    ciLoadedFor.current = key
     void actions.loadCiStatus(path, branch ?? undefined)
   }, [path, branch, state.ghReady, state.ghMessage, actions])
 
@@ -99,6 +104,7 @@ export function ChecksTab() {
   }
 
   const refresh = () => {
+    ciLoadedFor.current = `${path}:${branch ?? ''}`
     void actions.loadCiStatus(path, branch ?? undefined)
   }
 

@@ -8,17 +8,73 @@
  * repo with no GitHub remote) the tab shows the setup panel instead.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { PullRequest, PullRequestState } from '../api/types'
 import { useStore } from '../state/store'
 import { Button, EmptyState, Spinner } from './common'
 import { GitHubSetupPanel } from './GitHubSetup'
+import { AgentReviewButton } from './AgentReviewButton'
 
 const PR_STATES: PullRequestState[] = ['open', 'closed', 'merged']
 
 function stateLabel(state: PullRequestState): string {
   return state === 'open' ? 'Open' : state === 'closed' ? 'Closed' : 'Merged'
 }
+
+/** One PR row. Memoized so an unrelated store update doesn't re-render every row. */
+const PullRequestRow = memo(function PullRequestRow({
+  pr,
+  selected,
+  busy,
+  onOpen,
+}: {
+  pr: PullRequest
+  selected: boolean
+  busy: boolean
+  onOpen: (pr: PullRequest) => void
+}) {
+  return (
+    <div
+      className={`file-row pr-row${selected ? ' selected' : ''}`}
+      onClick={() => onOpen(pr)}
+      role="button"
+      tabIndex={0}
+      title={`#${pr.number} ${pr.title}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(pr)
+        }
+      }}
+    >
+      <span className="pr-number">#{pr.number}</span>
+      <span className="pr-main">
+        <span className="pr-title">{pr.title}</span>
+        <span className="pr-meta">
+          <span>{pr.author?.login ?? 'unknown author'}</span>
+          <span className="mono">
+            {pr.headRefName} → {pr.baseRefName}
+          </span>
+          <span className="diff-stats">
+            <span className="added">+{pr.additions}</span>{' '}
+            <span className="deleted">−{pr.deletions}</span>
+          </span>
+          <span>{pr.changedFiles} files</span>
+        </span>
+      </span>
+      {pr.isDraft ? <span className="status-badge draft">Draft</span> : null}
+      <span className={`status-badge ${pr.state}`}>{stateLabel(pr.state)}</span>
+      {/* The review button must not also open the PR. */}
+      <span className="row-actions" onClick={(e) => e.stopPropagation()} role="presentation">
+        <AgentReviewButton
+          target={{ kind: 'pr', number: pr.number }}
+          disabled={busy}
+          title={`Ask an agent to review PR #${pr.number}`}
+        />
+      </span>
+    </div>
+  )
+})
 
 export function PullRequestsTab() {
   const { state, actions } = useStore()
@@ -29,6 +85,7 @@ export function PullRequestsTab() {
   const selected = state.selectedPr
   const loading = state.prsLoading
   const [detailLoading, setDetailLoading] = useState(false)
+  const detailLoadingRef = useRef(false)
 
   // `github.status` + `github.remote`: once per repo, when the tab is
   // opened (never on every repo switch).
@@ -41,8 +98,14 @@ export function PullRequestsTab() {
 
   // The list itself, for the active state filter. Skipped while the
   // server can't talk to GitHub — the setup panel is showing instead.
+  // Guarded so re-opening the tab does not re-read an unchanged list
+  // (use "Refresh" to force it).
+  const prsLoadedFor = useRef<string | null>(null)
   useEffect(() => {
     if (!state.ghReady || state.ghMessage) return
+    const key = `${path}:${prsState}`
+    if (prsLoadedFor.current === key) return
+    prsLoadedFor.current = key
     void actions.loadPullRequests(path, prsState)
   }, [path, prsState, state.ghReady, state.ghMessage, actions])
 
@@ -50,6 +113,23 @@ export function PullRequestsTab() {
   useEffect(() => {
     setDetailLoading(false)
   }, [path, prsState])
+
+  // Open the detail pane. A useCallback (all hooks stay above the early
+  // returns) so the memoized rows get a stable `onOpen` prop.
+  const openPr = useCallback(
+    async (pr: PullRequest) => {
+      if (detailLoadingRef.current) return
+      detailLoadingRef.current = true
+      setDetailLoading(true)
+      try {
+        await actions.viewPullRequest(path, pr.number)
+      } finally {
+        detailLoadingRef.current = false
+        setDetailLoading(false)
+      }
+    },
+    [path, actions.viewPullRequest],
+  )
 
   if (state.ghMessage) {
     return (
@@ -70,16 +150,6 @@ export function PullRequestsTab() {
     )
   }
 
-  const openPr = async (pr: PullRequest) => {
-    if (detailLoading) return
-    setDetailLoading(true)
-    try {
-      await actions.viewPullRequest(path, pr.number)
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
   const checkout = async () => {
     if (!selected || busy) return
     await actions.checkoutPullRequest(path, selected.number)
@@ -88,6 +158,11 @@ export function PullRequestsTab() {
   const repoLabel = state.ghRemote
     ? `${state.ghRemote.owner}/${state.ghRemote.name}`
     : 'this repository'
+
+  const refreshPullRequests = () => {
+    prsLoadedFor.current = `${path}:${prsState}`
+    void actions.loadPullRequests(path, prsState)
+  }
 
   return (
     <div className="changes">
@@ -100,7 +175,7 @@ export function PullRequestsTab() {
             variant="ghost"
             disabled={busy || loading}
             title="Reload pull requests"
-            onClick={() => void actions.loadPullRequests(path, prsState)}
+            onClick={refreshPullRequests}
           >
             Refresh
           </Button>
@@ -130,38 +205,13 @@ export function PullRequestsTab() {
             </EmptyState>
           ) : (
             prs.map((pr) => (
-              <div
+              <PullRequestRow
                 key={pr.number}
-                className={`file-row pr-row${selected?.number === pr.number ? ' selected' : ''}`}
-                onClick={() => void openPr(pr)}
-                role="button"
-                tabIndex={0}
-                title={`#${pr.number} ${pr.title}`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    void openPr(pr)
-                  }
-                }}
-              >
-                <span className="pr-number">#{pr.number}</span>
-                <span className="pr-main">
-                  <span className="pr-title">{pr.title}</span>
-                  <span className="pr-meta">
-                    <span>{pr.author?.login ?? 'unknown author'}</span>
-                    <span className="mono">
-                      {pr.headRefName} → {pr.baseRefName}
-                    </span>
-                    <span className="diff-stats">
-                      <span className="added">+{pr.additions}</span>{' '}
-                      <span className="deleted">−{pr.deletions}</span>
-                    </span>
-                    <span>{pr.changedFiles} files</span>
-                  </span>
-                </span>
-                {pr.isDraft ? <span className="status-badge draft">Draft</span> : null}
-                <span className={`status-badge ${pr.state}`}>{stateLabel(pr.state)}</span>
-              </div>
+                pr={pr}
+                selected={selected?.number === pr.number}
+                busy={busy}
+                onOpen={openPr}
+              />
             ))
           )}
         </div>

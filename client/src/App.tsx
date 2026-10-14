@@ -7,6 +7,8 @@
  * and a `src/ui/<View>Tab.tsx` component.
  */
 
+import { useMemo } from 'react'
+import { AgentsSettings } from './ui/AgentsSettings'
 import { BranchesTab } from './ui/BranchesTab'
 import { ChangesTab, RepoNotices } from './ui/ChangesTab'
 import { ChecksTab } from './ui/ChecksTab'
@@ -80,19 +82,36 @@ function Shell() {
   )
 }
 
+/**
+ * Rendered only while a repo is selected — exactly like Stash/Tags, the
+ * Agents tab needs a selected repo (agent work is per-repo).
+ */
 function Tabs() {
   const { state, actions } = useStore()
   const fileCount = state.status?.workingDirectory.files.length ?? 0
+  const agentCount = state.detectedAgents.filter((agent) => agent.available).length
 
-  const tabs: Array<{ view: View; label: string; count?: number }> = [
-    { view: 'changes', label: 'Changes', count: fileCount },
-    { view: 'history', label: 'History', count: state.commits.length },
-    { view: 'branches', label: 'Branches', count: state.branches.length },
-    { view: 'prs', label: 'Pull Requests', count: state.prs.length },
-    { view: 'checks', label: 'Checks / CI' },
-    { view: 'stash', label: 'Stash', count: state.stashes.length },
-    { view: 'tags', label: 'Tags', count: Object.keys(state.tags).length },
-  ]
+  const tabs = useMemo<Array<{ view: View; label: string; count?: number }>>(
+    () => [
+      { view: 'changes', label: 'Changes', count: fileCount },
+      { view: 'history', label: 'History', count: state.commits.length },
+      { view: 'branches', label: 'Branches', count: state.branches.length },
+      { view: 'prs', label: 'Pull Requests', count: state.prs.length },
+      { view: 'checks', label: 'Checks / CI' },
+      { view: 'stash', label: 'Stash', count: state.stashes.length },
+      { view: 'tags', label: 'Tags', count: Object.keys(state.tags).length },
+      { view: 'agents', label: 'Agents', count: agentCount },
+    ],
+    [
+      fileCount,
+      state.commits.length,
+      state.branches.length,
+      state.prs.length,
+      state.stashes.length,
+      state.tags,
+      agentCount,
+    ],
+  )
 
   return (
     <nav className="tabs" role="tablist">
@@ -114,6 +133,11 @@ function Tabs() {
   )
 }
 
+/**
+ * The active tab's body. Only the active view is mounted, so a closed
+ * tab never fires its loads (agent scan / PR list / CI) — each tab
+ * loads its own data on open.
+ */
 function ActiveView() {
   const { state } = useStore()
   switch (state.activeView) {
@@ -131,6 +155,8 @@ function ActiveView() {
       return <StashTab />
     case 'tags':
       return <TagsTab />
+    case 'agents':
+      return <AgentsSettings />
     default:
       return <ChangesTab />
   }

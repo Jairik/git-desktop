@@ -9,12 +9,78 @@
  * Excluded ids are kept locally so unchecking survives refreshes.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { methods } from '../api/client'
 import type { Diff, FileChange } from '../api/types'
 import { useStore } from '../state/store'
 import { Button, ConfirmButton, EmptyState, fileStatusLabel, Spinner } from './common'
+import { CommitComposer } from './CommitComposer'
 import { DiffPane } from './DiffPane'
+import { AgentReviewButton } from './AgentReviewButton'
+import { SummarizeFileButton } from './SummarizeFileButton'
+import { FileComments } from './FileComments'
+
+/** One working-directory row. Memoized so unrelated re-renders are cheap. */
+const FileRow = memo(function FileRow({
+  file,
+  checked,
+  selected,
+  busy,
+  onSelect,
+  onToggle,
+  onDiscard,
+}: {
+  file: FileChange
+  checked: boolean
+  selected: boolean
+  busy: boolean
+  onSelect: (id: string) => void
+  onToggle: (file: FileChange, include: boolean) => void
+  onDiscard: (paths: string[]) => void
+}) {
+  return (
+    <div
+      className={`file-row${selected ? ' selected' : ''}`}
+      onClick={() => onSelect(file.id)}
+      role="button"
+      tabIndex={0}
+      title={file.path}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(file.id)
+        }
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={busy}
+        aria-label={`Include ${file.path}`}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onToggle(file, e.target.checked)}
+      />
+      <span className="file-path">{file.path}</span>
+      <span className={`status-badge ${file.status.kind}`}>
+        {fileStatusLabel(file.status.kind)}
+      </span>
+      <span className="file-actions">
+        <ConfirmButton
+          small
+          variant="ghost"
+          disabled={busy}
+          title={`Discard changes in ${file.path}`}
+          aria-label={`Discard ${file.path}`}
+          question="Discard?"
+          confirmLabel="Discard"
+          onConfirm={() => onDiscard([file.path])}
+        >
+          🗑
+        </ConfirmButton>
+      </span>
+    </div>
+  )
+})
 
 export function ChangesTab() {
   const { state, actions } = useStore()
@@ -42,6 +108,13 @@ export function ChangesTab() {
     setSummary('')
     setDescription('')
   }, [path])
+
+  // Warm the agent scan so the composer knows whether an agent is
+  // available. The store caches it per repo (see `ensureAgents`), so
+  // this fires at most once per repo — never per render or tab toggle.
+  useEffect(() => {
+    void actions.ensureAgents(path)
+  }, [path, actions])
 
   // Keep a sensible selected file as the list changes.
   useEffect(() => {
@@ -109,20 +182,33 @@ export function ChangesTab() {
     }
   }
 
-  const setInclusion = async (file: FileChange, include: boolean) => {
-    if (busy) return
-    setExcluded((prev) => {
-      const next = new Set(prev)
-      if (include) next.delete(file.id)
-      else next.add(file.id)
-      return next
-    })
-    await actions.runMutation(include ? 'Stage' : 'Unstage', () =>
-      include
-        ? methods.statusStage(path, [file.path])
-        : methods.statusUnstage(path, [file.path]),
-    )
-  }
+  const setInclusion = useCallback(
+    async (file: FileChange, include: boolean) => {
+      if (busy) return
+      setExcluded((prev) => {
+        const next = new Set(prev)
+        if (include) next.delete(file.id)
+        else next.add(file.id)
+        return next
+      })
+      await actions.runMutation(include ? 'Stage' : 'Unstage', () =>
+        include
+          ? methods.statusStage(path, [file.path])
+          : methods.statusUnstage(path, [file.path]),
+      )
+    },
+    [busy, path, actions.runMutation],
+  )
+
+  const discard = useCallback(
+    async (targets: string[]) => {
+      if (busy || targets.length === 0) return
+      await actions.runMutation('Discard', () =>
+        methods.statusDiscard(path, targets, true, false),
+      )
+    },
+    [busy, path, actions.runMutation],
+  )
 
   const stageAll = async () => {
     if (busy) return
@@ -136,14 +222,6 @@ export function ChangesTab() {
     if (busy) return
     const ok = await actions.runMutation('Unstage all', () => methods.statusUnstageAll(path))
     if (ok !== null) setExcluded(new Set())
-  }
-
-  const discard = async (targets: string[]) => {
-    if (busy) return
-    if (targets.length === 0) return
-    await actions.runMutation('Discard', () =>
-      methods.statusDiscard(path, targets, true, false),
-    )
   }
 
   /* ------------------------------- render ------------------------- */
@@ -180,112 +258,63 @@ export function ChangesTab() {
         </div>
 
         <div className="file-list">
-          {files.map((file) => {
-            const checked = !excluded.has(file.id)
-            return (
-              <div
-                key={file.id}
-                className={`file-row${file.id === selectedFile ? ' selected' : ''}`}
-                onClick={() => setSelectedFile(file.id)}
-                role="button"
-                tabIndex={0}
-                title={file.path}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setSelectedFile(file.id)
-                  }
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={busy}
-                  aria-label={`Include ${file.path}`}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => void setInclusion(file, e.target.checked)}
-                />
-                <span className="file-path">{file.path}</span>
-                <span className={`status-badge ${file.status.kind}`}>
-                  {fileStatusLabel(file.status.kind)}
-                </span>
-                <span className="file-actions">
-                  <ConfirmButton
-                    small
-                    variant="ghost"
-                    disabled={busy}
-                    title={`Discard changes in ${file.path}`}
-                    aria-label={`Discard ${file.path}`}
-                    question="Discard?"
-                    confirmLabel="Discard"
-                    onConfirm={() => void discard([file.path])}
-                  >
-                    🗑
-                  </ConfirmButton>
-                </span>
-              </div>
-            )
-          })}
+          {files.map((file) => (
+            <FileRow
+              key={file.id}
+              file={file}
+              checked={!excluded.has(file.id)}
+              selected={file.id === selectedFile}
+              busy={busy}
+              onSelect={setSelectedFile}
+              onToggle={setInclusion}
+              onDiscard={discard}
+            />
+          ))}
         </div>
 
-        <div className="commit-box">
-          <div className="commit-inputs">
-            <input
-              type="text"
-              placeholder="Summary (required)"
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void commit()
-                }
-              }}
-              aria-label="Commit summary"
-            />
-            <textarea
-              rows={3}
-              placeholder="Description (optional)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              aria-label="Commit description"
-            />
-          </div>
-          <div className="commit-actions">
-            <Button
-              variant="primary"
-              disabled={!canCommit || busy}
-              busy={state.busy === 'Commit'}
-              onClick={() => void commit()}
+        <CommitComposer
+          summary={summary}
+          description={description}
+          onSummaryChange={setSummary}
+          onDescriptionChange={setDescription}
+          busy={busy}
+          canCommit={canCommit}
+          onCommit={() => void commit()}
+          selectedCount={includedPaths.length}
+          totalCount={files.length}
+        >
+          {selectedChange ? (
+            <ConfirmButton
+              small
+              disabled={busy}
+              title={`Discard changes in ${selectedChange.path}`}
+              question={`Discard ${selectedChange.path}?`}
+              confirmLabel="Discard"
+              onConfirm={() => void discard([selectedChange.path])}
             >
-              Commit
-            </Button>
-            <span className="hint">
-              {includedPaths.length} of {files.length} file{files.length === 1 ? '' : 's'} selected
-            </span>
-            <span className="grow" />
-            {selectedChange ? (
-              <ConfirmButton
-                small
-                disabled={busy}
-                title={`Discard changes in ${selectedChange.path}`}
-                question={`Discard ${selectedChange.path}?`}
-                confirmLabel="Discard"
-                onConfirm={() => void discard([selectedChange.path])}
-              >
-                Discard selected
-              </ConfirmButton>
-            ) : null}
-          </div>
-        </div>
+              Discard selected
+            </ConfirmButton>
+          ) : null}
+        </CommitComposer>
       </div>
 
-      <DiffPane
-        title={selectedChange?.path}
-        diff={diff}
-        loading={diffLoading}
-        error={diffError}
-      />
+      <div className="diff-column">
+        <DiffPane
+          title={selectedChange?.path}
+          diff={diff}
+          loading={diffLoading}
+          error={diffError}
+          actions={
+            selectedChange ? (
+              <>
+                <AgentReviewButton target={{ kind: 'file', file: selectedChange.path }} />
+                <SummarizeFileButton file={selectedChange.path} />
+              </>
+            ) : null
+          }
+        />
+        <FileComments file={selectedChange?.path ?? null} />
+      </div>
     </div>
   )
 }

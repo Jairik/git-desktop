@@ -262,6 +262,90 @@ export interface CiStatus {
 }
 
 /* ------------------------------------------------------------------ */
+/* Local agents, reviews & comments                                    */
+/* ------------------------------------------------------------------ */
+
+/** `agent.list` — one scanned agent CLI. */
+export interface DetectedAgent {
+  name: string
+  command: string
+  path: string | null
+  available: boolean
+  version: string | null
+}
+
+/** `AgentsConfig.agents` — a configured agent CLI. */
+export interface AgentSpec {
+  name: string
+  command: string
+  detect: string[]
+  argv: string[]
+  enabled: boolean
+  env?: { [k: string]: string }
+}
+
+/** One task (`commit_message` / `summarize_file` / `review` / `comment`). */
+export interface TaskConfig {
+  agent: string
+  skill: string | null
+  prompt: string
+}
+
+/** The task keys the config editor knows about. */
+export type AgentTask = 'commit_message' | 'summarize_file' | 'review' | 'comment'
+
+export const AGENT_TASKS: AgentTask[] = ['commit_message', 'summarize_file', 'review', 'comment']
+
+export interface AgentsConfig {
+  defaultAgent: string
+  agents: AgentSpec[]
+  /** Keyed by {@link AgentTask}. */
+  tasks: { [task: string]: TaskConfig }
+  /** The file `agent.config.set` writes to. */
+  configPath: string
+}
+
+/** `agent.review` target — discriminated by `kind`. */
+export type ReviewTarget =
+  | { kind: 'file'; file: string; ref?: string }
+  | { kind: 'commit'; sha: string }
+  | { kind: 'pr'; number: number }
+
+/** `agent.review` result — `output` is free-form agent text. */
+export interface AgentReview {
+  agent: string
+  target: ReviewTarget
+  summary: string | null
+  output: string
+}
+
+/** A file comment, stored per-repo by the daemon. */
+export interface Comment {
+  id: string
+  file: string
+  line: number | null
+  side: 'old' | 'new' | null
+  body: string
+  status: 'open' | 'sent'
+  reply: string | null
+  agent: string | null
+  /** ISO-8601 */
+  createdAt: string
+}
+
+/** `agent.commit_message` result. */
+export interface CommitMessageResult {
+  message: string
+  agent: string
+}
+
+/** `agent.summarize_file` result. */
+export interface SummarizeResult {
+  summary: string
+  agent: string
+}
+
+/* ------------------------------------------------------------------ */
 /* Transport-level shapes                                              */
 /* ------------------------------------------------------------------ */
 

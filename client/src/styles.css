@@ -3,7 +3,8 @@
    Dark theme with CSS variables (GitHub-Desktop-like).
    Sections: variables · base · layout · header · banner · toasts ·
    sidebar · toolbar · tabs · changes · diff · history · branches ·
-   stash · tags · common controls · progress · utilities
+   stash · tags · common controls · progress · agents · review ·
+   comments · utilities
    ================================================================== */
 
 /* ---------------------------- variables --------------------------- */
@@ -489,6 +490,14 @@ select {
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   border-right: 1px solid var(--border);
+}
+
+/* The diff pane on top, the file's comments underneath it. */
+.diff-column {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
 }
 
 .changes-files-header {
@@ -1308,7 +1317,409 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
-/* ----------------------------- utility ---------------------------- */
+/* --------------------- local agents / review / comments ------------- *
+ * Every agent operation (`agent.*`, `comment.send`) runs an LLM CLI on
+ * the server and can be slow, so these blocks always pair their content
+ * with an explicit busy state (`.agent-busy`, `.review-busy`,
+ * `aria-busy` on the panel) and render agent text as-is.
+ * -------------------------------------------------------------------- */
+
+.agent-generate {
+  border-color: rgba(210, 153, 34, 0.4);
+  color: var(--orange);
+}
+
+.agent-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* --------------------------- agents tab ---------------------------- */
+
+.agents-settings .section-card > header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-config-path {
+  padding: 4px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-setup {
+  margin: 6px 12px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(210, 153, 34, 0.5);
+  border-radius: var(--radius-sm);
+  background: rgba(210, 153, 34, 0.08);
+}
+
+.agent-setup strong {
+  color: var(--orange);
+  font-size: 12px;
+}
+
+.agent-saved {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.agent-warning {
+  font-size: 11px;
+  color: var(--orange);
+}
+
+.agent-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.agent-table th {
+  text-align: left;
+  padding: 4px 12px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.agent-table td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.agent-table .agent-name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agent-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.agent-badge.available {
+  color: var(--green);
+}
+
+.agent-badge.missing {
+  color: var(--gray);
+}
+
+.agent-config-editor {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.task-card {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-raised);
+}
+
+.task-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-card-head strong {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.task-card-fields {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-card-fields .field {
+  min-width: 160px;
+}
+
+/* --------------------------- review modal -------------------------- */
+
+.review-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(1, 4, 9, 0.6);
+}
+
+.review-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(720px, 100%);
+  max-height: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(1, 4, 9, 0.7);
+}
+
+.review-modal-head,
+.review-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.review-modal-head {
+  border-bottom: 1px solid var(--border-muted);
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.review-modal-foot {
+  border-top: 1px solid var(--border-muted);
+}
+
+.review-modal-body {
+  overflow: auto;
+  padding: 12px;
+  min-height: 0;
+}
+
+.review-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.review-summary {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.review-output {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+/* ------------------------- summarize panel ------------------------- */
+
+.summarize-button {
+  display: inline-flex;
+}
+
+.summarize-panel {
+  position: absolute;
+  z-index: 40;
+  right: 0;
+  top: calc(100% + 4px);
+  width: min(420px, 90vw);
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(1, 4, 9, 0.6);
+}
+
+.summarize-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-strong);
+}
+
+.summarize-output {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The button owns the panel, so the panel positions against it. */
+.diff-header .summarize-button {
+  position: relative;
+}
+
+/* --------------------------- comments ------------------------------ */
+
+.comments-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-panel);
+}
+
+.comments-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.comments-panel-head .count {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.comment-list {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 190px;
+}
+
+.comment-row {
+  display: grid;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.comment-row:last-child {
+  border-bottom: none;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.comment-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.comment-badge.open {
+  color: var(--orange);
+}
+
+.comment-badge.sent {
+  color: var(--green);
+}
+
+.comment-body {
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-reply {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--green);
+  background: rgba(46, 160, 67, 0.08);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.comment-reply pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+.comment-form {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-panel-raised);
+}
+
+.comment-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.comment-form .comment-line-input {
+  width: 64px;
+}
+
+.comment-form .comment-side-select {
+  width: auto;
+}
+
+/* ----------------------- inline row actions ------------------------ */
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+}
+
+.commit-row .row-actions {
+  opacity: 0.75;
+  transition: opacity 0.1s ease;
+}
+
+.commit-row:hover .row-actions,
+.commit-row:focus-within .row-actions,
+.commit-row.selected .row-actions {
+  opacity: 1;
+}
+
+/* ---------------------------- utility ---------------------------- */
 .row {
   display: flex;
   align-items: center;

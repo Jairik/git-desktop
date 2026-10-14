@@ -5,12 +5,13 @@
  * (`commit.resetTo`, soft/mixed/hard) behind confirmation.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { methods } from '../api/client'
 import type { ChangedFilesResult, Commit, Diff } from '../api/types'
 import { useStore } from '../state/store'
 import { ConfirmButton, EmptyState, fileStatusLabel, SelectField, Spinner } from './common'
 import { DiffPane } from './DiffPane'
+import { AgentReviewButton } from './AgentReviewButton'
 
 function formatDate(iso: string): string {
   const date = new Date(iso)
@@ -21,6 +22,60 @@ function formatDate(iso: string): string {
     day: 'numeric',
   })
 }
+
+/** One log row. Memoized so an unrelated store update doesn't re-render every row. */
+const CommitRow = memo(function CommitRow({
+  commit,
+  selected,
+  onSelect,
+}: {
+  commit: Commit
+  selected: boolean
+  onSelect: (sha: string) => void
+}) {
+  return (
+    <div
+      className={`commit-row${selected ? ' selected' : ''}`}
+      onClick={() => onSelect(commit.sha)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(commit.sha)
+        }
+      }}
+    >
+      <div className="summary">{commit.summary}</div>
+      <div className="meta">
+        <span className="sha">{commit.shortSha}</span>
+        <span>{commit.author.name}</span>
+        <span>{formatDate(commit.author.date)}</span>
+        {commit.tags.length > 0 ? (
+          <span className="row" style={{ gap: 4 }}>
+            {commit.tags.map((tag) => (
+              <span className="tag-pill" key={tag}>
+                {tag}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <span className="grow" />
+        {/* The review button must not also select the row. */}
+        <span
+          className="row-actions"
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
+          <AgentReviewButton
+            target={{ kind: 'commit', sha: commit.sha }}
+            title={`Ask an agent to review ${commit.shortSha}`}
+          />
+        </span>
+      </div>
+    </div>
+  )
+})
 
 export function HistoryTab() {
   const { state, actions } = useStore()
@@ -182,35 +237,12 @@ export function HistoryTab() {
 
       <div className="commit-list">
         {commits.map((commit) => (
-          <div
+          <CommitRow
             key={commit.sha}
-            className={`commit-row${commit.sha === selectedSha ? ' selected' : ''}`}
-            onClick={() => setSelectedSha(commit.sha)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setSelectedSha(commit.sha)
-              }
-            }}
-          >
-            <div className="summary">{commit.summary}</div>
-            <div className="meta">
-              <span className="sha">{commit.shortSha}</span>
-              <span>{commit.author.name}</span>
-              <span>{formatDate(commit.author.date)}</span>
-              {commit.tags.length > 0 ? (
-                <span className="row" style={{ gap: 4 }}>
-                  {commit.tags.map((tag) => (
-                    <span className="tag-pill" key={tag}>
-                      {tag}
-                    </span>
-                  ))}
-                </span>
-              ) : null}
-            </div>
-          </div>
+            commit={commit}
+            selected={commit.sha === selectedSha}
+            onSelect={setSelectedSha}
+          />
         ))}
       </div>
 

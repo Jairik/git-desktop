@@ -32,9 +32,12 @@ import {
 } from '../api/client'
 import { onProgress, setProgressBaseUrl } from '../api/progress'
 import type {
+  AgentsConfig,
   Branch,
   CiStatus,
+  Comment,
   Commit,
+  DetectedAgent,
   GitHubRemote,
   GitHubStatus,
   IStatusResult,
@@ -44,11 +47,73 @@ import type {
   PullRequestState,
   Remote,
   Repository,
+  ReviewTarget,
   StashEntry,
   TagMap,
 } from '../api/types'
 
-export type View = 'changes' | 'history' | 'branches' | 'stash' | 'tags' | 'prs' | 'checks'
+export type View =
+  | 'changes'
+  | 'history'
+  | 'branches'
+  | 'stash'
+  | 'tags'
+  | 'prs'
+  | 'checks'
+  | 'agents'
+
+/** Result of a successful `agent.commit_message`, split for the composer. */
+export interface CommitMessageDraft {
+  summary: string
+  description: string
+}
+
+/** `agent.summarize_file` result as held in the store. */
+export interface FileSummary {
+  file: string
+  text: string
+  agent: string
+}
+
+/** `agent.review` result as held in the store. */
+export interface ReviewResult {
+  agent: string
+  target: ReviewTarget
+  summary: string | null
+  output: string
+}
+
+/**
+ * Split a free-form commit message into the composer's summary +
+ * description on the first blank line.
+ */
+export function splitCommitMessage(message: string): CommitMessageDraft {
+  const text = message.replace(/\r\n?/g, '\n').trim()
+  if (text.length === 0) return { summary: '', description: '' }
+  const gap = /\n[ \t]*\n/.exec(text)
+  if (gap === null) return { summary: text, description: '' }
+  return {
+    summary: text.slice(0, gap.index).trim(),
+    description: text.slice(gap.index + gap[0].length).trim(),
+  }
+}
+
+/** Friendly "what to do next" message for agent RPC failures (else null). */
+function agentSetupError(error: unknown): string | null {
+  if (!(error instanceof RpcError)) return null
+  switch (error.code) {
+    case 'auth_required':
+      return 'Install/authorize an AI agent (see Agents tab)'
+    case 'not_found':
+      return 'No agent configured for this task'
+    case 'agent_error':
+      return error.message || 'The agent CLI failed.'
+    case 'unreachable':
+      return 'Cannot reach the git server — start it to use AI agents.'
+    default:
+      return null
+  }
+}
 
 /** Progress events pushed by the server on `/ws`. */
 export type ProgressEventName =
@@ -103,6 +168,37 @@ export interface AppState {
   ci: CiStatus | null
   ciLoading: boolean
 
+  /**
+   * Local agents (`agent.list` / `agent.config.get`). Scanned lazily —
+   * once per selected repo (see `ensureAgents`), never on every tab
+   * toggle, and re-scanned only on "Rescan". `agentsBusy` is the label of
+   * the in-flight agent/review/comment operation (they are slow), and
+   * `agentsMessage` is the friendly "install/authorize an agent" hint.
+   */
+  detectedAgents: DetectedAgent[]
+  agentsLoading: boolean
+  agentsConfig: AgentsConfig | null
+  agentsConfigLoading: boolean
+  agentsBusy: string | null
+  agentsMessage: string | null
+  /** Repo path agents were loaded for (drives the once-per-repo scan). */
+  agentsLoadedFor: string | null
+
+  /** `agent.commit_message` for the commit composer. */
+  commitMessageBusy: boolean
+
+  /** `agent.summarize_file` for the previewed file. */
+  fileSummary: FileSummary | null
+  fileSummaryBusy: boolean
+
+  /** `agent.review` for the last reviewed target. */
+  review: ReviewResult | null
+  reviewBusy: boolean
+
+  /** Per-file comments; `commentsBusy` holds the comment id in flight. */
+  comments: Record<string, Comment[]>
+  commentsBusy: string | null
+
   activeView: View
   /** Label of the in-flight mutation (e.g. 'Pulling…'), or null. */
   busy: string | null
@@ -138,6 +234,20 @@ const initialState: AppState = {
   selectedPr: null,
   ci: null,
   ciLoading: false,
+  detectedAgents: [],
+  agentsLoading: false,
+  agentsConfig: null,
+  agentsConfigLoading: false,
+  agentsBusy: null,
+  agentsMessage: null,
+  agentsLoadedFor: null,
+  commitMessageBusy: false,
+  fileSummary: null,
+  fileSummaryBusy: false,
+  review: null,
+  reviewBusy: false,
+  comments: {},
+  commentsBusy: null,
   activeView: 'changes',
   busy: null,
   progress: {},
@@ -175,6 +285,21 @@ type Action =
   | { type: 'pr-selected'; pr: PullRequestDetail | null }
   | { type: 'ci-loading' }
   | { type: 'ci-loaded'; ci: CiStatus | null }
+  | { type: 'agents-loading' }
+  | { type: 'agents-loaded'; agents: DetectedAgent[]; config: AgentsConfig | null }
+  | { type: 'agents-config-loading' }
+  | { type: 'agents-config-loaded'; config: AgentsConfig | null }
+  | { type: 'agents-busy'; label: string | null }
+  | { type: 'agents-message'; message: string | null }
+  | { type: 'agents-loaded-for'; path: string | null }
+  | { type: 'commit-message-busy'; busy: boolean }
+  | { type: 'file-summary'; summary: FileSummary | null }
+  | { type: 'file-summary-busy'; busy: boolean }
+  | { type: 'review'; review: ReviewResult | null }
+  | { type: 'review-busy'; busy: boolean }
+  | { type: 'comments-loading' }
+  | { type: 'comments-loaded'; file: string; comments: Comment[] }
+  | { type: 'comments-busy'; id: string | null }
   | { type: 'view'; view: View }
   | { type: 'busy'; label: string | null }
   | { type: 'progress'; event: ProgressEventName; data: ProgressPayload }
@@ -260,6 +385,22 @@ function reducer(state: AppState, action: Action): AppState {
         selectedPr: null,
         ci: null,
         ciLoading: false,
+        // Agent data is per-repo too: drop the previous repo's scan so
+        // the next repo gets its own (lazy) load.
+        detectedAgents: [],
+        agentsLoading: false,
+        agentsConfig: null,
+        agentsConfigLoading: false,
+        agentsBusy: null,
+        agentsMessage: null,
+        agentsLoadedFor: null,
+        commitMessageBusy: false,
+        fileSummary: null,
+        fileSummaryBusy: false,
+        review: null,
+        reviewBusy: false,
+        comments: {},
+        commentsBusy: null,
       }
     case 'repo-loading':
       return { ...state, loadingRepoData: true }
@@ -301,6 +442,46 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, ciLoading: true }
     case 'ci-loaded':
       return { ...state, ciLoading: false, ci: action.ci }
+    case 'agents-loading':
+      return { ...state, agentsLoading: true, agentsConfigLoading: true, agentsMessage: null }
+    case 'agents-loaded':
+      return {
+        ...state,
+        agentsLoading: false,
+        agentsConfigLoading: false,
+        detectedAgents: action.agents,
+        agentsConfig: action.config,
+      }
+    case 'agents-config-loading':
+      return { ...state, agentsConfigLoading: true }
+    case 'agents-config-loaded':
+      return { ...state, agentsConfigLoading: false, agentsConfig: action.config }
+    case 'agents-busy':
+      return { ...state, agentsBusy: action.label }
+    case 'agents-message':
+      return { ...state, agentsMessage: action.message }
+    case 'agents-loaded-for':
+      return { ...state, agentsLoadedFor: action.path }
+    case 'commit-message-busy':
+      return { ...state, commitMessageBusy: action.busy }
+    case 'file-summary':
+      return { ...state, fileSummary: action.summary }
+    case 'file-summary-busy':
+      return { ...state, fileSummaryBusy: action.busy }
+    case 'review':
+      return { ...state, review: action.review }
+    case 'review-busy':
+      return { ...state, reviewBusy: action.busy }
+    case 'comments-loading':
+      return { ...state, commentsBusy: state.commentsBusy ?? 'load' }
+    case 'comments-loaded':
+      return {
+        ...state,
+        comments: { ...state.comments, [action.file]: action.comments },
+        commentsBusy: state.commentsBusy === 'load' ? null : state.commentsBusy,
+      }
+    case 'comments-busy':
+      return { ...state, commentsBusy: action.id }
     case 'view':
       return { ...state, activeView: action.view }
     case 'busy':
@@ -363,6 +544,49 @@ export interface StoreActions {
   loadCiStatus: (path: string, ref?: string) => Promise<void>
   /** Set the active `pr.list` filter (drops the selected PR). */
   setPullRequestState: (state: PullRequestState) => void
+
+  /**
+   * Local agents. Agent operations run an LLM CLI on the server, so they
+   * are slow: every action here exposes an explicit busy flag.
+   * Failures of `auth_required` / `not_found` / `agent_error` fold into
+   * `agentsMessage` (the tab shows the hint) and still surface a toast.
+   */
+
+  /** True when at least one detected agent is available. */
+  agentsReady: boolean
+  /**
+   * Load `agent.list` + `agent.config.get` for a repo — but only once:
+   * tab toggles reuse the scan, switching repos starts a new one.
+   * Pass `force` (Rescan) to re-read regardless.
+   */
+  ensureAgents: (path: string, force?: boolean) => Promise<void>
+  /** Re-scan the agent CLIs and re-read the config. */
+  loadAgents: () => Promise<void>
+  /** Re-read the effective agents config (without rescanning). */
+  loadAgentsConfig: () => Promise<void>
+  /** Persist the agents config, then re-read it. `true` when it stuck. */
+  saveAgentsConfig: (config: AgentsConfig) => Promise<boolean>
+  /** `agent.commit_message`, split into the composer's two fields. */
+  generateCommitMessage: () => Promise<CommitMessageDraft | null>
+  /** `agent.summarize_file` for a (previewed) file. */
+  summarizeFile: (file: string, ref?: string) => Promise<void>
+  /** `agent.review` on a file / commit / PR. */
+  runReview: (target: ReviewTarget) => Promise<void>
+  /** Clear the file summary / review result panels. */
+  clearAgentResults: () => void
+  /** `comment.list` for one file. */
+  loadComments: (file: string) => Promise<void>
+  /** `comment.create` for a file (optional line + side). */
+  createComment: (input: {
+    file: string
+    line?: number | null
+    side?: 'old' | 'new' | null
+    body: string
+  }) => Promise<Comment | null>
+  /** `comment.delete`. */
+  deleteComment: (id: string) => Promise<void>
+  /** `comment.send` — runs the `comment` task, fills reply + agent. */
+  sendComment: (id: string) => Promise<Comment | null>
 
   /**
    * Run a mutating RPC: sets the busy label, catches errors into the
@@ -738,6 +962,258 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /* ------------------------------------------------------------------ */
+  /* Local agents, reviews & comments                                    */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Scan the agent CLIs + read the effective config for a repo. The scan
+   * is cached per repo (and by the server until `agent.config.set`), so
+   * repeat calls — e.g. toggling into the Agents tab — are free.
+   */
+  const loadAgentData = useCallback(
+    async (path: string, force: boolean) => {
+      if (!force) {
+        if (stateRef.current.agentsLoadedFor === path) return
+        if (stateRef.current.agentsLoading) return
+      }
+      // Claim the repo up-front so concurrent mounts don't double-scan.
+      stateRef.current = { ...stateRef.current, agentsLoadedFor: path }
+      dispatch({ type: 'agents-loaded-for', path })
+      dispatch({ type: 'agents-loading' })
+      // The scan probes each agent's `--version`, so it is not instant —
+      // label it (the same label drives the Agents tab's spinner).
+      dispatch({ type: 'agents-busy', label: 'Scanning agents…' })
+      try {
+        const [scan, config] = await Promise.all([
+          methods.agentList(),
+          methods.agentConfigGet(),
+        ])
+        dispatch({ type: 'agents-loaded', agents: scan.agents, config })
+      } catch (error) {
+        dispatch({ type: 'agents-loaded', agents: [], config: null })
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        // Transport failures are already explained by the server banner.
+        if (!(error instanceof RpcError && error.code === 'unreachable')) pushError(error)
+      } finally {
+        dispatch({ type: 'agents-busy', label: null })
+      }
+    },
+    [pushError],
+  )
+
+  const ensureAgents = useCallback(
+    async (path: string, force: boolean = false) => {
+      await loadAgentData(path, force)
+    },
+    [loadAgentData],
+  )
+
+  /** Rescan + re-read the config for the currently selected repo. */
+  const loadAgents = useCallback(async () => {
+    const path = stateRef.current.selectedRepoPath
+    if (!path) return
+    await loadAgentData(path, true)
+  }, [loadAgentData])
+
+  const loadAgentsConfig = useCallback(async () => {
+    dispatch({ type: 'agents-config-loading' })
+    try {
+      const config = await methods.agentConfigGet()
+      dispatch({ type: 'agents-config-loaded', config })
+    } catch (error) {
+      dispatch({ type: 'agents-config-loaded', config: null })
+      dispatch({ type: 'agents-message', message: agentSetupError(error) })
+      if (!(error instanceof RpcError && error.code === 'unreachable')) pushError(error)
+    }
+  }, [pushError])
+
+  const saveAgentsConfig = useCallback(
+    async (config: AgentsConfig): Promise<boolean> => {
+      dispatch({ type: 'agents-message', message: null })
+      dispatch({ type: 'agents-busy', label: 'Saving agents config…' })
+      try {
+        await methods.agentConfigSet(config)
+        // `agent.config.set` clears the server's scan cache, so re-read
+        // the effective config (not the whole scan) to confirm the save.
+        await loadAgentsConfig()
+        return true
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+        return false
+      } finally {
+        dispatch({ type: 'agents-busy', label: null })
+      }
+    },
+    [loadAgentsConfig, pushError],
+  )
+
+  const generateCommitMessage = useCallback(async (): Promise<CommitMessageDraft | null> => {
+    const path = stateRef.current.selectedRepoPath
+    if (!path) return null
+    dispatch({ type: 'commit-message-busy', busy: true })
+    try {
+      const result = await methods.agentCommitMessage({ path, staged: true })
+      return splitCommitMessage(result.message)
+    } catch (error) {
+      dispatch({ type: 'agents-message', message: agentSetupError(error) })
+      pushError(error)
+      return null
+    } finally {
+      dispatch({ type: 'commit-message-busy', busy: false })
+    }
+  }, [pushError])
+
+  const summarizeFile = useCallback(
+    async (file: string, ref?: string) => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path || file.length === 0) return
+      dispatch({ type: 'file-summary-busy', busy: true })
+      try {
+        const result = await methods.agentSummarizeFile({
+          path,
+          file,
+          ...(ref ? { ref } : {}),
+        })
+        dispatch({
+          type: 'file-summary',
+          summary: { file, text: result.summary, agent: result.agent },
+        })
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+      } finally {
+        dispatch({ type: 'file-summary-busy', busy: false })
+      }
+    },
+    [pushError],
+  )
+
+  const runReview = useCallback(
+    async (target: ReviewTarget) => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path) return
+      dispatch({ type: 'review-busy', busy: true })
+      try {
+        const review = await methods.agentReview({ path, target })
+        dispatch({
+          type: 'review',
+          review: {
+            agent: review.agent,
+            target: review.target,
+            summary: review.summary,
+            output: review.output,
+          },
+        })
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+      } finally {
+        dispatch({ type: 'review-busy', busy: false })
+      }
+    },
+    [pushError],
+  )
+
+  const clearAgentResults = useCallback(() => {
+    dispatch({ type: 'file-summary', summary: null })
+    dispatch({ type: 'review', review: null })
+  }, [])
+
+  const loadComments = useCallback(
+    async (file: string) => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path || file.length === 0) return
+      dispatch({ type: 'comments-loading' })
+      try {
+        const comments = await methods.commentList({ path, file })
+        dispatch({ type: 'comments-loaded', file, comments })
+      } catch (error) {
+        dispatch({ type: 'comments-loaded', file, comments: [] })
+        pushError(error)
+      }
+    },
+    [pushError],
+  )
+
+  const createComment = useCallback(
+    async (input: {
+      file: string
+      line?: number | null
+      side?: 'old' | 'new' | null
+      body: string
+    }): Promise<Comment | null> => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path) return null
+      const body = input.body.trim()
+      if (body.length === 0) return null
+      dispatch({ type: 'comments-busy', id: 'create' })
+      try {
+        const comment = await methods.commentCreate({
+          path,
+          file: input.file,
+          line: input.line ?? null,
+          side: input.side ?? null,
+          body,
+        })
+        // Re-read the file so ordering/statuses match the daemon's.
+        const comments = await methods.commentList({ path, file: input.file })
+        dispatch({ type: 'comments-loaded', file: input.file, comments })
+        return comment
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+        return null
+      } finally {
+        dispatch({ type: 'comments-busy', id: null })
+      }
+    },
+    [pushError],
+  )
+
+  const deleteComment = useCallback(
+    async (id: string) => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path) return
+      const file =
+        Object.keys(stateRef.current.comments).find((key) =>
+          stateRef.current.comments[key].some((comment) => comment.id === id),
+        ) ?? null
+      dispatch({ type: 'comments-busy', id })
+      try {
+        await methods.commentDelete({ path, id })
+        if (file) await loadComments(file)
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+      } finally {
+        dispatch({ type: 'comments-busy', id: null })
+      }
+    },
+    [loadComments, pushError],
+  )
+
+  const sendComment = useCallback(
+    async (id: string): Promise<Comment | null> => {
+      const path = stateRef.current.selectedRepoPath
+      if (!path) return null
+      dispatch({ type: 'comments-busy', id })
+      try {
+        const updated = await methods.commentSend({ path, id })
+        if (updated.file) await loadComments(updated.file)
+        return updated
+      } catch (error) {
+        dispatch({ type: 'agents-message', message: agentSetupError(error) })
+        pushError(error)
+        return null
+      } finally {
+        dispatch({ type: 'comments-busy', id: null })
+      }
+    },
+    [loadComments, pushError],
+  )
+
+  /* ------------------------------------------------------------------ */
   /* Wiring                                                             */
   /* ------------------------------------------------------------------ */
 
@@ -780,6 +1256,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [initApp])
 
   const retryConnection = useCallback(async () => {
+    dispatch({ type: 'agents-loaded-for', path: null })
     const up = await checkServer()
     if (up) {
       await loadRepositories()
@@ -797,6 +1274,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setServerUrl(clean)
       setProgressBaseUrl(clean)
       dispatch({ type: 'server-url', url: clean })
+      dispatch({ type: 'agents-loaded-for', path: null })
       const up = await checkServer()
       if (up) {
         await loadRepositories()
@@ -831,9 +1309,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checkoutPullRequest,
       loadCiStatus,
       setPullRequestState,
+      ensureAgents,
+      loadAgents,
+      loadAgentsConfig,
+      saveAgentsConfig,
+      generateCommitMessage,
+      summarizeFile,
+      runReview,
+      clearAgentResults,
+      loadComments,
+      createComment,
+      deleteComment,
+      sendComment,
       runMutation,
       pushError,
       dismissError,
+      // Derived: at least one scanned agent binary is usable.
+      agentsReady: state.detectedAgents.some((agent) => agent.available),
     }),
     [
       initApp,
@@ -856,9 +1348,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checkoutPullRequest,
       loadCiStatus,
       setPullRequestState,
+      ensureAgents,
+      loadAgents,
+      loadAgentsConfig,
+      saveAgentsConfig,
+      generateCommitMessage,
+      summarizeFile,
+      runReview,
+      clearAgentResults,
+      loadComments,
+      createComment,
+      deleteComment,
+      sendComment,
       runMutation,
       pushError,
       dismissError,
+      state.detectedAgents,
     ],
   )
 
