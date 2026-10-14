@@ -109,3 +109,34 @@ summaries. Everything lands on branch `server-client-refactor`.
 - Streaming/token-level agent output; agent run history; structured review findings.
 - Installers/auto-update; OS integration points (still in the architecture "not yet"
   list).
+
+## Review log
+
+Three review passes ran (two GLM 5.3-flash, one default-agent full-branch review).
+Fixed and verified: arbitrary-file-read via `file` in `agent.summarize_file`/comments
+(H1 → `safe_join_repo_file`), comment-store race + non-atomic writes (H2 → atomic
+tmp+rename, corrupt quarantine, re-read-and-splice), agent timeout hang on
+grandchildren (M3 → process-group kill), stale agent-availability cache (M4),
+non-stable comment filenames (M6 → FNV-1a), Electron child `error` crash +
+renderer `sandbox` (L5/L7), empty `detect` launching a TUI (L10),
+`status.get includeUntracked=false` (L2 → `--untracked-files=no`), force-push via a
+`+`-prefixed branch (L3), `SummarizeFileButton` `ref` prop (L6 → `atRef`), Electron
+navigation guards (L8), and `gh` ref validation (L4b).
+
+**Deferred (small, non-blocking — future pass):**
+- **L1** `FileComments`/`AgentsSettings` use a module-scope `loadedFor` ref that
+  survives repo switches, so the same-named file in another repo shows "no
+  comments"/"0 agents" until a manual Rescan. Fix: reset the ref on repo change
+  (or key the component by repo path).
+- **L4** `reject_option` not applied to a few client-supplied refs/shasa/remote
+  names (`rename_branch`, `undo_commit`, `run_log_with`, `delete_tag`,
+  `fetch`/`pull` remote). Verified non-exploitable (positional / after `--`);
+  defense-in-depth only.
+- **L5** client `splitUpstream` splits on the first `/`, which is wrong for remotes
+  whose names contain `/` (e.g. remote `my/fork`). The server's
+  `split_remote_branch` does longest-match; wire the client to it.
+- **L7** non-UTF-8 filenames are read with `from_utf8_lossy` despite `-z`, so a
+  latin-1 filename renders mangled and later stage/discard misses it. Needs an
+  `OsString`/bytes path; at minimum surface a clear error.
+- **L9** `agent.list` probes agents sequentially (each up to ~20 s); probing
+  concurrently would shorten a cold first scan.
