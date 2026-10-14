@@ -1,0 +1,157 @@
+# gitdaemon — local AI agents configuration
+# ==========================================
+#
+# This file is the default (and version-controlled) agents configuration for
+# the daemon. It decides which local AI-agent CLIs the daemon may run, and how
+# each task (commit message, file summary, review, comment) is executed.
+#
+# How the daemon resolves the config (first match wins, see `src/agents/mod.rs`):
+#   1. `$GITDAEMON_AGENTS_CONFIG` — a read-only override path (used by tests).
+#   2. `<data_dir>/agents.toml`  — written by the `agent.config.set` RPC method.
+#   3. this file (the built-in default compiled into the binary).
+#
+# The daemon ONLY shells out to machines' installed AI CLIs; nothing is bundled
+# or downloaded. An agent is usable for a task when its `command` is found on
+# PATH and `<command> <detect...>` exits 0 (reported by `agent.list`).
+#
+# ---------------------------------------------------------------------------
+# Adding a new agent
+# ---------------------------------------------------------------------------
+# Add a `[[agents]]` table:
+#   name    - short handle referenced from a task's `agent` field
+#   command - the executable to look up on PATH
+#   detect  - argv used to probe availability (usually ["--version"]); the first
+#             stdout line is captured as the agent's version banner
+#   argv    - argv used to run a prompt; the prompt itself is ALWAYS appended
+#             as the final single argv element (never through a shell, so no
+#             injection). e.g. ["-p"], ["run"], ["exec"]
+#   enabled - whether this agent may be selected for a task
+#   env     - optional table of extra environment variables for the process
+#
+# ---------------------------------------------------------------------------
+# Adding a new task
+# ---------------------------------------------------------------------------
+# Add a `[tasks.<name>]` table. Known tasks: `commit_message`, `summarize_file`,
+# `review`, `comment`. Each task names its `agent` (an `[[agents]].name`),
+# optionally a `skill` (a `<name>/SKILL.md` under `server/skills/`, whose text
+# is injected ahead of the prompt) and a `prompt` (prepended to the per-call
+# context: the diff / file / commit / comment).
+#
+# ---------------------------------------------------------------------------
+# Skills
+# ---------------------------------------------------------------------------
+# A task's `skill` points at a directory containing a `SKILL.md`. The daemon
+# looks for `<skill>/SKILL.md` under `$GITDAEMON_SKILLS_DIR` and
+# `server/skills/` (see `resolve_skill`). The commit-message task ships wired
+# to the `generate-commit-message` skill at `server/skills/generate-commit-message/`.
+
+# The agent used when nothing more specific applies. Every task names its own
+# agent explicitly, so this is the documented default / fallback.
+default_agent = "claude"
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+[[agents]]
+name = "opencode"
+command = "opencode"
+detect = ["--version"]
+argv = ["run"]
+enabled = true
+
+[[agents]]
+name = "claude"
+command = "claude"
+detect = ["--version"]
+argv = ["-p"]
+enabled = true
+
+[[agents]]
+name = "codex"
+command = "codex"
+detect = ["--version"]
+argv = ["exec"]
+enabled = true
+
+[[agents]]
+name = "cursor-agent"
+command = "cursor-agent"
+detect = ["-p", "--version"]
+argv = ["-p"]
+enabled = true
+
+# Disabled example agents. Flip `enabled = true` (and point a task at them) once
+# the binary is installed. They ship disabled so they never run by accident.
+
+[[agents]]
+name = "aider"
+command = "aider"
+detect = ["--version"]
+argv = ["--message"]
+enabled = false
+
+[[agents]]
+name = "gemini"
+command = "gemini"
+detect = ["--version"]
+argv = ["-p"]
+enabled = false
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+
+[tasks.commit_message]
+agent = "claude"
+skill = "generate-commit-message"
+prompt = """
+You are writing a git commit message for the staged/working changes provided
+below.
+
+Follow the generate-commit-message guidance above EXACTLY. Analyze the diff and
+produce a single Conventional Commits message: a concise `type(scope): summary`
+subject line, then — scaled to the size of the change — a short body giving
+architectural context and bullets grouped by component. Small changes get a
+subject alone; larger changes get the full structured treatment.
+
+Output ONLY the commit message itself. Do not add any preamble, explanation,
+commentary, or markdown code fences around it — just the raw message text.
+"""
+
+[tasks.summarize_file]
+agent = "claude"
+prompt = """
+You are summarizing the contents of a file provided below.
+
+Write a clear, concise prose summary of what this file does, its role in the
+codebase, and anything notable (public surface, key types/functions, patterns,
+or risks). Prefer a short paragraph or a few bullets. Output ONLY the summary
+text — no preamble and no surrounding code fences.
+"""
+
+[tasks.review]
+agent = "claude"
+prompt = """
+You are performing a code review of the change provided below (a file's diff, a
+commit, or a pull request).
+
+Identify correctness issues, bugs, edge cases, security concerns, and notable
+maintainability risks, ordered by severity. Call out concrete file/line
+references where you can. Praise good patterns sparingly. If the change looks
+correct, say so plainly rather than inventing issues. Output ONLY the review
+text — no preamble and no surrounding code fences.
+"""
+
+[tasks.comment]
+agent = "claude"
+prompt = """
+You are a helpful code-review assistant responding to a reviewer's comment on a
+file. Below you will find the reviewer's comment and the relevant portion of the
+file it refers to.
+
+Answer the comment directly and concisely: explain the code, reason about the
+suggested change, and — when appropriate — propose a concrete fix (as a short
+code snippet). Do not repeat the comment back verbatim. Output ONLY your reply
+text — no preamble and no surrounding code fences.
+"""

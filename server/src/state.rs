@@ -10,8 +10,10 @@ use std::sync::Mutex;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
+use crate::agents::AgentRunner;
 use crate::git::GitRunner;
 use crate::github::GhRunner;
+use crate::models::DetectedAgent;
 use crate::store::RepositoryStore;
 
 /// The number of progress events buffered for slow WebSocket clients.
@@ -61,8 +63,13 @@ pub struct AppState {
     pub runner: GitRunner,
     /// Runs the gh (GitHub CLI) commands.
     pub gh: GhRunner,
+    /// Runs the local AI-agent CLIs.
+    pub agent: AgentRunner,
     /// The repository store, guarded by a blocking mutex (all users are short).
     pub store: Mutex<RepositoryStore>,
+    /// The cached agent-PATH scan (see `agent.list`); `None` until the first
+    /// scan, cleared by `agent.config.set`.
+    pub agent_cache: Mutex<Option<Vec<DetectedAgent>>>,
     /// The directory the store is persisted to.
     pub data_dir: PathBuf,
     /// The WebSocket event bus.
@@ -83,7 +90,9 @@ impl AppState {
         AppState {
             runner: GitRunner,
             gh: GhRunner,
+            agent: AgentRunner,
             store: Mutex::new(store),
+            agent_cache: Mutex::new(None),
             data_dir,
             events: EventBus::new(),
             port,
@@ -102,6 +111,14 @@ impl AppState {
     /// Locks the store, recovering from a poisoned mutex.
     pub fn lock_store(&self) -> std::sync::MutexGuard<'_, RepositoryStore> {
         match self.store.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    /// Locks the agent-detection cache, recovering from a poisoned mutex.
+    pub fn lock_agent_cache(&self) -> std::sync::MutexGuard<'_, Option<Vec<DetectedAgent>>> {
+        match self.agent_cache.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }

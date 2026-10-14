@@ -22,6 +22,9 @@ pub enum ErrorCode {
     AuthRequired,
     /// The `gh` CLI itself exited with a non-success code.
     GhError,
+    /// A configured local AI agent CLI failed (non-zero exit or timeout).
+    /// `data.stderr` carries the agent's output.
+    AgentError,
     /// Local filesystem or I/O failure.
     IoError,
     /// Unexpected server-side failure.
@@ -38,6 +41,7 @@ impl ErrorCode {
             ErrorCode::GitError => "git_error",
             ErrorCode::AuthRequired => "auth_required",
             ErrorCode::GhError => "gh_error",
+            ErrorCode::AgentError => "agent_error",
             ErrorCode::IoError => "io_error",
             ErrorCode::Internal => "internal_error",
         }
@@ -85,6 +89,17 @@ pub enum ApiError {
         args: Vec<String>,
         /// The exit code gh reported.
         code: i32,
+    },
+
+    /// A configured local AI agent CLI failed (non-zero exit or timeout), or
+    /// exited normally after a run the daemon rejected.
+    #[error("{message}")]
+    AgentError {
+        /// A human-readable description of the failure (e.g. "agent timed
+        /// out"); `data.stderr` carries the agent's raw output.
+        message: String,
+        /// The agent's stderr (or captured output), trimmed.
+        stderr: String,
     },
 
     /// Local I/O failure.
@@ -135,6 +150,15 @@ impl ApiError {
         }
     }
 
+    /// Builds an `agent_error` result carrying the agent's captured output in
+    /// `data.stderr`.
+    pub fn agent_error(message: impl Into<String>, stderr: impl Into<String>) -> Self {
+        ApiError::AgentError {
+            message: message.into(),
+            stderr: stderr.into(),
+        }
+    }
+
     /// The error code used on the wire.
     pub fn code(&self) -> ErrorCode {
         match self {
@@ -144,6 +168,7 @@ impl ApiError {
             ApiError::GitError { .. } => ErrorCode::GitError,
             ApiError::AuthRequired { .. } => ErrorCode::AuthRequired,
             ApiError::GhError { .. } => ErrorCode::GhError,
+            ApiError::AgentError { .. } => ErrorCode::AgentError,
             ApiError::IoError { .. } => ErrorCode::IoError,
             ApiError::Internal { .. } => ErrorCode::Internal,
         }
@@ -168,6 +193,9 @@ impl ApiError {
             ApiError::GhError { stderr, args, .. } => Some(json!({
                 "stderr": stderr,
                 "args": args,
+            })),
+            ApiError::AgentError { stderr, .. } => Some(json!({
+                "stderr": stderr,
             })),
             _ => None,
         }

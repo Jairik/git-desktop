@@ -11,6 +11,7 @@
 //! writes the discovery file `~/.gitdaemon/server.json` and binds
 //! `127.0.0.1:$GITDAEMON_PORT` (default 4789).
 
+mod agents;
 mod error;
 mod git;
 mod github;
@@ -22,6 +23,7 @@ mod state;
 mod store;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -33,6 +35,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::rpc::{error_response, success_response, RpcRequest, SERVER_NAME, SERVER_VERSION};
 use crate::state::AppState;
@@ -56,13 +59,34 @@ async fn main() {
 
     write_discovery_file(port);
 
-    let app = Router::new()
+    // The API router always takes precedence over the static-SPA fallback, so
+    // `/rpc`, `/ws`, `/health` and `/info` keep working whether or not a client
+    // build is being served.
+    let api = Router::new()
         .route("/rpc", post(rpc_handler))
         .route("/ws", get(ws_handler))
         .route("/health", get(health_handler))
         .route("/info", get(info_handler))
-        .layer(cors_layer())
         .with_state(state.clone());
+
+    let app = match serve_dir() {
+        Some(dir) => {
+            log::info("serving static SPA")
+                .field("dir", dir.display().to_string());
+            // Serve the built client as a single-page app: real files come from
+            // ServeDir, and any unknown path falls back to index.html so the
+            // client's own router can handle deep links.
+            api.fallback_service(
+                ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html"))),
+            )
+        }
+        None => {
+            log::info("API-only mode (set GITDAEMON_SERVE_DIR to serve a built client)");
+            api
+        }
+    };
+
+    let app = app.layer(cors_layer());
 
     let address = SocketAddr::from(([127, 0, 0, 1], port));
 
@@ -92,6 +116,16 @@ fn port_from_env() -> u16 {
         .ok()
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(DEFAULT_PORT)
+}
+
+/// The directory to serve as a static SPA, from `GITDAEMON_SERVE_DIR`.
+///
+/// Returns `None` (API-only mode) when the variable is unset/empty or points at
+/// a directory that does not exist — a missing build is not an error.
+fn serve_dir() -> Option<PathBuf> {
+    std::env::var_os("GITDAEMON_SERVE_DIR")
+        .map(PathBuf::from)
+        .filter(|dir| !dir.as_os_str().is_empty() && dir.is_dir())
 }
 
 /// A loopback-only CORS policy.

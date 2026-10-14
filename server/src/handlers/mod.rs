@@ -22,3 +22,7 @@ pub mod config;
 pub mod network;
 /// GitHub methods, implemented thinly over the `gh` CLI.
 pub mod github;
+/// Local AI-agent methods (list/config/commit_message/summarize_file/review).
+pub mod agents;
+/// Reviewer-comment methods (create/list/delete/send).
+pub mod comments;

@@ -4,6 +4,8 @@
 //! `docs/architecture/server-client.md`. Field names are `camelCase` and
 //! unions are discriminated by a `kind` string.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// A repository the client knows about, persisted in the store.
@@ -577,4 +579,179 @@ pub struct CiStatus {
     pub roll_up: String,
     /// The individual checks (check runs first, then commit statuses).
     pub checks: Vec<Check>,
+}
+
+/// A local AI agent binary the daemon knows how to talk to, as configured in
+/// `server/agents.toml`. This is the wire form sent back by `agent.config.get`
+/// and accepted by `agent.config.set`; the on-disk TOML form lives in the
+/// [`crate::agents`] module as a "raw" struct.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpec {
+    /// The short name used to reference this agent from tasks (e.g. `claude`).
+    pub name: String,
+    /// The executable to spawn (looked up on `PATH`).
+    pub command: String,
+    /// Arguments passed to detect whether the binary is installed (e.g.
+    /// `["--version"]`); a zero exit marks the agent available.
+    pub detect: Vec<String>,
+    /// Arguments passed to actually run a prompt (e.g. `["-p"]`); the prompt is
+    /// always appended as the final single argv element.
+    pub argv: Vec<String>,
+    /// Whether this agent may be selected for a task.
+    pub enabled: bool,
+    /// Extra environment variables layered onto the agent process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<BTreeMap<String, String>>,
+}
+
+/// How a single task (commit message, file summary, review, comment) is run:
+/// which agent, which optional skill file to inject, and the task prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskConfig {
+    /// The name of the [`AgentSpec`] that runs this task.
+    pub agent: String,
+    /// The name of a skill (a `<name>/SKILL.md`) whose text is injected ahead of
+    /// the prompt, or `null` when the task carries no skill.
+    #[serde(default)]
+    pub skill: Option<String>,
+    /// The task prompt prepended to the per-call context.
+    pub prompt: String,
+}
+
+/// The effective agents configuration, plus the path `agent.config.set` would
+/// write to (`<data_dir>/agents.toml`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsConfig {
+    /// The agent used when a task does override it (informational; every task
+    /// names its own agent).
+    pub default_agent: String,
+    /// Every agent binary the daemon knows about.
+    pub agents: Vec<AgentSpec>,
+    /// The task table, keyed by task name (`commit_message`, `summarize_file`,
+    /// `review`, `comment`).
+    pub tasks: BTreeMap<String, TaskConfig>,
+    /// The path `agent.config.set` persists to (always `<data_dir>/agents.toml`).
+    #[serde(default)]
+    pub config_path: String,
+}
+
+/// A detected agent, reported by `agent.list`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedAgent {
+    /// The agent's configured name.
+    pub name: String,
+    /// The executable name.
+    pub command: String,
+    /// The resolved absolute path on `PATH`, or null when not installed.
+    pub path: Option<String>,
+    /// Whether the detect probe (`<command> <detect...>`) exited zero.
+    pub available: bool,
+    /// The first line of the detect output (a version banner), or null.
+    pub version: Option<String>,
+}
+
+/// What a review is about — discriminated by `kind`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ReviewTarget {
+    /// A single file's changes (working tree by default, or relative to `ref`).
+    File {
+        /// The file path relative to the repo root.
+        file: String,
+        /// An optional ref to diff against (defaults to the working tree).
+        #[serde(default, rename = "ref")]
+        reference: Option<String>,
+    },
+    /// A single commit's changes.
+    Commit {
+        /// The commit SHA (or any revision).
+        sha: String,
+    },
+    /// A pull request (resolved over the `gh` CLI).
+    Pr {
+        /// The pull request number.
+        number: i64,
+    },
+}
+
+/// The result of `agent.review`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReview {
+    /// The agent that produced the review.
+    pub agent: String,
+    /// What was reviewed (echoed back from the request).
+    pub target: ReviewTarget,
+    /// A one-line agent-provided summary, or null (unused for free-form agents).
+    pub summary: Option<String>,
+    /// The agent's free-form review output.
+    pub output: String,
+}
+
+/// Which side of the file a comment is anchored to.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CommentSide {
+    /// The old (pre-change) side of the diff.
+    Old,
+    /// The new (post-change) side of the diff.
+    New,
+}
+
+/// Whether a comment is still awaiting an agent reply, or has been answered.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CommentStatus {
+    /// Created locally; no agent reply yet.
+    Open,
+    /// The `comment` task has replied.
+    Sent,
+}
+
+/// A reviewer comment anchored to a file/line, stored per-repo in the data dir.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    /// A stable, unique id assigned by the daemon.
+    pub id: String,
+    /// The file path relative to the repo root.
+    pub file: String,
+    /// The line the comment is anchored to, or null for a file-level comment.
+    pub line: Option<u32>,
+    /// Which side of the diff the line refers to, or null.
+    pub side: Option<CommentSide>,
+    /// The reviewer's comment body (the ask handed to the agent on `send`).
+    pub body: String,
+    /// Whether the comment has been answered.
+    pub status: CommentStatus,
+    /// The agent's reply, filled in by `comment.send`, or null.
+    pub reply: Option<String>,
+    /// The agent that replied, filled in by `comment.send`, or null.
+    pub agent: Option<String>,
+    /// ISO-8601 creation timestamp.
+    pub created_at: String,
+}
+
+/// The result of `agent.commit_message`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitMessageResult {
+    /// The generated commit message (trimmed agent output).
+    pub message: String,
+    /// The agent that produced it.
+    pub agent: String,
+}
+
+/// The result of `agent.summarize_file`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizeResult {
+    /// The generated summary (trimmed agent output).
+    pub summary: String,
+    /// The agent that produced it.
+    pub agent: String,
 }

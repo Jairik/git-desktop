@@ -172,6 +172,18 @@ async fn dispatch_inner(state: &AppState, method: &str, params: Value) -> Result
         "pr.checkout" => handlers::github::pr_checkout(state, params).await,
         "ci.status" => handlers::github::ci_status(state, params).await,
 
+        // Local agents, reviews & comments
+        "agent.list" => handlers::agents::agent_list(state, params).await,
+        "agent.config.get" => handlers::agents::agent_config_get(state, params).await,
+        "agent.config.set" => handlers::agents::agent_config_set(state, params).await,
+        "agent.commit_message" => handlers::agents::agent_commit_message(state, params).await,
+        "agent.summarize_file" => handlers::agents::agent_summarize_file(state, params).await,
+        "agent.review" => handlers::agents::agent_review(state, params).await,
+        "comment.create" => handlers::comments::comment_create(state, params).await,
+        "comment.list" => handlers::comments::comment_list(state, params).await,
+        "comment.delete" => handlers::comments::comment_delete(state, params).await,
+        "comment.send" => handlers::comments::comment_send(state, params).await,
+
         _ => Err(ApiError::bad_request(format!("unknown method: {method}"))),
     }
 }
