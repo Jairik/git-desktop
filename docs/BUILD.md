@@ -93,6 +93,8 @@ skills), `GITDAEMON_AGENT_TIMEOUT_SECS` (default 240).
 
 - **End-to-end smoke** (builds the daemon, drives the whole workflow — repo,
   stage, commit, branch, diff, GitHub + agent status): `yarn e2e`.
+- **Agent + SPA regression** (deterministic fake agent: `agent.*`, `comment.*`,
+  and `GITDAEMON_SERVE_DIR`): `yarn e2e:agents`.
 - **Rust checks:** `cd server && cargo build && cargo clippy -- -W clippy::all`.
 - **Client checks:** `yarn web:typecheck && yarn web:build`.
 

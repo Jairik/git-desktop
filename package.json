@@ -52,6 +52,7 @@
     "web:build": "cd client && npm run build",
     "web:typecheck": "cd client && npm run typecheck",
     "e2e": "bash docs/architecture/scripts/e2e-smoke.sh",
+    "e2e:agents": "bash docs/architecture/scripts/agents-e2e.sh",
     "build": "yarn build:server && yarn build:client",
     "build:server": "cd server && cargo build --release",
     "build:client": "cd client && npm run build",
