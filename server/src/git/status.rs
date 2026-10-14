@@ -3,7 +3,7 @@
 //! Porcelain v2 is the machine readable status format which the legacy engine
 //! already used; the entry shapes below mirror `app/src/lib/status-parser.ts`.
 
-use super::{split_nul, GitRunner};
+use super::{is_missing_repository, split_nul, GitRunner};
 use crate::error::ApiError;
 use crate::models::{
     AheadBehind, AppFileStatus, FileChange, IStatusResult, SubmoduleStatus, WorkingDirectoryStatus,
@@ -154,7 +154,7 @@ fn parse_ahead_behind(value: &str) -> Option<AheadBehind> {
 
 /// `1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>`
 fn parse_changed_entry(field: &str) -> Option<StatusEntry> {
-    let mut parts = field.split(' ');
+    let mut parts = field.splitn(9, ' ');
 
     parts.next(); // the record type
     let status_code = parts.next()?.to_string();
@@ -166,6 +166,8 @@ fn parse_changed_entry(field: &str) -> Option<StatusEntry> {
     parts.next(); // hH
     parts.next(); // hI
 
+    // Porcelain v2 in `-z` mode does not quote paths, so the path is the
+    // remainder of the record — spaces in the name included.
     let path = parts.next()?.to_string();
 
     Some(StatusEntry {
@@ -178,7 +180,7 @@ fn parse_changed_entry(field: &str) -> Option<StatusEntry> {
 
 /// `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>`
 fn parse_renamed_or_copied_entry(field: &str, old_path: Option<String>) -> Option<StatusEntry> {
-    let mut parts = field.split(' ');
+    let mut parts = field.splitn(10, ' ');
 
     parts.next(); // the record type
     let status_code = parts.next()?.to_string();
@@ -191,6 +193,8 @@ fn parse_renamed_or_copied_entry(field: &str, old_path: Option<String>) -> Optio
     parts.next(); // hI
     parts.next(); // X<score>
 
+    // The new path is the remainder of the record; the old path follows as a
+    // separate NUL-delimited record.
     let path = parts.next()?.to_string();
 
     Some(StatusEntry {
@@ -203,15 +207,19 @@ fn parse_renamed_or_copied_entry(field: &str, old_path: Option<String>) -> Optio
 
 /// `u <xy> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`
 fn parse_unmerged_entry(field: &str) -> Option<StatusEntry> {
-    let mut parts = field.split(' ');
+    let mut parts = field.splitn(11, ' ');
 
     parts.next(); // the record type
     let status_code = parts.next()?.to_string();
     let submodule_status_code = parts.next()?.to_string();
 
-    for _ in 0..7 {
-        parts.next();
-    }
+    parts.next(); // m1
+    parts.next(); // m2
+    parts.next(); // m3
+    parts.next(); // mW
+    parts.next(); // h1
+    parts.next(); // h2
+    parts.next(); // h3
 
     let path = parts.next()?.to_string();
 
@@ -245,8 +253,8 @@ pub fn map_status(entry: &StatusEntry) -> AppFileStatus {
 
     match code {
         "??" => return AppFileStatus::Untracked,
-        ".M" | "M." | "AM" | "AD" => return AppFileStatus::Modified,
-        ".A" | "A." => return AppFileStatus::New,
+        ".M" | "M." => return AppFileStatus::Modified,
+        ".A" | "A." | "AM" | "AD" => return AppFileStatus::New,
         ".D" | "D." => return AppFileStatus::Deleted,
         ".R" | "R." | "RM" | "RD" => {
             return AppFileStatus::Renamed {
@@ -309,13 +317,12 @@ pub async fn get_status(
     args.push("--porcelain=2".to_string());
     args.push("-z".to_string());
 
-    // Exit code 128 means the repository is missing its `.git` directory; in
-    // that case we report an empty status for a repository that doesn't exist.
-    let output = runner.run_in_vec(path, args.clone()).await;
-
-    let output = match output {
+    // Exit code 128 covers both "this path is not a repository" and git
+    // refusing to touch a bare/permission-denied repository; only the former
+    // is reported as a repository that doesn't exist.
+    let output = match runner.run_in_vec(path, args).await {
         Ok(output) => output,
-        Err(ApiError::GitError { code: 128, .. }) => {
+        Err(ApiError::GitError { code: 128, stderr, .. }) if is_missing_repository(&stderr) => {
             return Ok(IStatusResult {
                 current_branch: None,
                 current_upstream_branch: None,
@@ -337,13 +344,10 @@ pub async fn get_status(
 
     let parsed = parse_status(&output.stdout_str());
 
-    let branch_ahead_behind = if parsed.headers.current_upstream_branch.is_some() {
-        ahead_behind(runner, path, &parsed.headers)
-            .await
-            .or(parsed.headers.branch_ahead_behind)
-    } else {
-        parsed.headers.branch_ahead_behind
-    };
+    // `--branch` already reports the ahead/behind counts as `branch.ab`, which
+    // is authoritative: an extra `rev-list` here would race a concurrent fetch
+    // and could get the two sides the wrong way round.
+    let branch_ahead_behind = parsed.headers.branch_ahead_behind;
 
     let files = parsed
         .entries
@@ -375,39 +379,6 @@ pub async fn get_status(
         },
         do_conflicted_files_exist,
     })
-}
-
-/// Computes how far the current branch is ahead/behind its upstream.
-async fn ahead_behind(
-    runner: &GitRunner,
-    path: &str,
-    headers: &StatusHeaders,
-) -> Option<AheadBehind> {
-    let branch = headers.current_branch.as_ref()?;
-    let upstream = headers.current_upstream_branch.as_ref()?;
-
-    let range = format!("{upstream}...{branch}");
-    let output = runner
-        .run_in_vec(
-            path,
-            vec![
-                "rev-list".to_string(),
-                "--left-right".to_string(),
-                "--count".to_string(),
-                "--end-of-options".to_string(),
-                range,
-                "--".to_string(),
-            ],
-        )
-        .await
-        .ok()?;
-
-    let stdout = output.stdout_str();
-    let mut pieces = stdout.split('\t');
-    let ahead = pieces.next()?.trim().parse().ok()?;
-    let behind = pieces.next()?.trim().parse().ok()?;
-
-    Some(AheadBehind { ahead, behind })
 }
 
 /// Whether the given `.git` marker file exists (MERGE_HEAD, SQUASH_MSG, ...).
@@ -476,6 +447,21 @@ pub async fn discard_files(
     let untracked: std::collections::HashSet<String> =
         split_nul(&untracked_output.stdout_str()).into_iter().collect();
 
+    let tracked_output = runner
+        .run_in_vec(path, ls_files_args(false, files))
+        .await?;
+
+    let tracked = split_nul(&tracked_output.stdout_str());
+
+    // Restore the tracked files first: deleting the untracked ones first would
+    // leave the working tree half-destroyed if the checkout then failed.
+    if !tracked.is_empty() {
+        let mut args = vec!["checkout".to_string(), "--".to_string()];
+        args.extend(tracked);
+
+        runner.run_in_vec(path, args).await.map(|_| ())?;
+    }
+
     if include_untracked {
         for file in files {
             if !untracked.contains(file) {
@@ -492,20 +478,7 @@ pub async fn discard_files(
         }
     }
 
-    let tracked_output = runner
-        .run_in_vec(path, ls_files_args(false, files))
-        .await?;
-
-    let tracked = split_nul(&tracked_output.stdout_str());
-
-    if tracked.is_empty() {
-        return Ok(());
-    }
-
-    let mut args = vec!["checkout".to_string(), "--".to_string()];
-    args.extend(tracked);
-
-    runner.run_in_vec(path, args).await.map(|_| ())
+    Ok(())
 }
 
 /// Builds the argv for a `git ls-files` call restricted to a set of files.

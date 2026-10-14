@@ -1,6 +1,6 @@
 //! Branch listing and manipulation.
 
-use super::GitRunner;
+use super::{reject_option, GitRunner};
 use crate::error::ApiError;
 use crate::models::{AheadBehind, Branch, BranchType, Tip};
 
@@ -69,6 +69,8 @@ pub async fn create_branch(
     start_point: Option<&str>,
     no_track: bool,
 ) -> Result<(), ApiError> {
+    reject_option(name)?;
+
     let mut args = vec!["branch".to_string()];
 
     if no_track {
@@ -110,10 +112,7 @@ pub async fn delete_branch(
                 .map(|_| ())
         }
         BranchType::Remote => {
-            let (remote, name) = branch
-                .name
-                .split_once('/')
-                .ok_or_else(|| ApiError::bad_request(format!("invalid remote branch: {}", branch.name)))?;
+            let (remote, name) = split_remote_branch(runner, path, &branch.name).await?;
 
             runner
                 .run_in(
@@ -121,7 +120,7 @@ pub async fn delete_branch(
                     &[
                         "push".to_string(),
                         "--".to_string(),
-                        remote.to_string(),
+                        remote,
                         format!(":{name}"),
                     ],
                 )
@@ -131,37 +130,112 @@ pub async fn delete_branch(
     }
 }
 
+/// Splits a remote branch's short name (`<remote>/<branch>`) into its parts.
+///
+/// A remote's own name may contain slashes, so the split point is the longest
+/// configured remote name the branch name starts with.
+async fn split_remote_branch(
+    runner: &GitRunner,
+    path: &str,
+    name: &str,
+) -> Result<(String, String), ApiError> {
+    let output = runner.run_in(path, &["remote".to_string()]).await?;
+    let remotes = output.stdout_str();
+
+    let remote = remotes
+        .lines()
+        .map(str::trim)
+        .filter(|candidate| {
+            name.strip_prefix(candidate)
+                .is_some_and(|rest| rest.starts_with('/') && rest.len() > 1)
+        })
+        .max_by_key(|candidate| candidate.len())
+        .ok_or_else(|| ApiError::bad_request(format!("invalid remote branch: {name}")))?
+        .to_string();
+
+    let branch = name[remote.len() + 1..].to_string();
+
+    Ok((remote, branch))
+}
+
 /// Checks out a branch by name.
 pub async fn checkout_branch(runner: &GitRunner, path: &str, name: &str) -> Result<(), ApiError> {
-    runner
-        .run_in(
-            path,
-            &[
-                "-c".to_string(),
-                "advice.detachedHead=false".to_string(),
-                "checkout".to_string(),
-                name.to_string(),
-            ],
-        )
-        .await
-        .map(|_| ())
+    reject_option(name)?;
+
+    let args = vec![
+        "-c".to_string(),
+        "advice.detachedHead=false".to_string(),
+        "checkout".to_string(),
+        "--end-of-options".to_string(),
+        name.to_string(),
+    ];
+
+    match runner.run_in_vec(path, args).await {
+        Ok(_) => Ok(()),
+        Err(error) if is_unsupported_option(&error) => {
+            // Older git without `--end-of-options`; `name` has been validated
+            // already, so the plain form is safe.
+            runner
+                .run_in(
+                    path,
+                    &[
+                        "-c".to_string(),
+                        "advice.detachedHead=false".to_string(),
+                        "checkout".to_string(),
+                        name.to_string(),
+                    ],
+                )
+                .await
+                .map(|_| ())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Checks out a commit, detaching HEAD.
 pub async fn checkout_commit(runner: &GitRunner, path: &str, sha: &str) -> Result<(), ApiError> {
-    runner
-        .run_in(
-            path,
-            &[
-                "-c".to_string(),
-                "advice.detachedHead=false".to_string(),
-                "checkout".to_string(),
-                "--detach".to_string(),
-                sha.to_string(),
-            ],
-        )
-        .await
-        .map(|_| ())
+    reject_option(sha)?;
+
+    let args = vec![
+        "-c".to_string(),
+        "advice.detachedHead=false".to_string(),
+        "checkout".to_string(),
+        "--detach".to_string(),
+        "--end-of-options".to_string(),
+        sha.to_string(),
+    ];
+
+    match runner.run_in_vec(path, args).await {
+        Ok(_) => Ok(()),
+        Err(error) if is_unsupported_option(&error) => {
+            runner
+                .run_in(
+                    path,
+                    &[
+                        "-c".to_string(),
+                        "advice.detachedHead=false".to_string(),
+                        "checkout".to_string(),
+                        "--detach".to_string(),
+                        sha.to_string(),
+                    ],
+                )
+                .await
+                .map(|_| ())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a git failure means the installed git didn't understand
+/// `--end-of-options` — the only failure the fallback path handles.
+fn is_unsupported_option(error: &ApiError) -> bool {
+    match error {
+        // git reports usage errors with 129 and names the option it rejected.
+        ApiError::GitError { code: 129, stderr, .. } => {
+            stderr.to_lowercase().contains("unknown option")
+        }
+        _ => false,
+    }
 }
 
 /// Computes how many commits a branch is ahead/behind its upstream.

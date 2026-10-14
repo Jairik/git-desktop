@@ -26,6 +26,7 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::http::{header, Method};
+use axum::http::request::Parts as RequestParts;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -92,13 +93,48 @@ fn port_from_env() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
-/// A permissive CORS layer: this daemon is only reachable from localhost, and
-/// the client runs in a browser tab which may be served from any origin.
+/// A loopback-only CORS policy.
+///
+/// The daemon binds to 127.0.0.1 but is still reachable from any page the
+/// user's browser loads, so only origins that can be served locally are
+/// allowed: `null` (a `file://` page or a sandboxed iframe) plus
+/// `http://localhost`, `http://127.0.0.1` and `http://[::1]` on any port. That
+/// keeps the Vite dev server and the packaged client working while blocking
+/// arbitrary websites.
 fn cors_layer() -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+        .allow_origin(tower_http::cors::AllowOrigin::predicate(is_loopback_origin))
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+}
+
+/// Whether an `Origin` header can only have been produced by localhost.
+fn is_loopback_origin(origin: &header::HeaderValue, _request: &RequestParts) -> bool {
+    // A sandboxed iframe or a `file://` page sends the opaque `null` origin.
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+
+    let Some((_scheme, rest)) = origin.split_once("://") else {
+        return origin == "null";
+    };
+
+    // Only plain http origins are allowed: https on a loopback address would
+    // need a certificate we cannot provide.
+    if !origin.starts_with("http://") {
+        return false;
+    }
+
+    // Strip the port, remembering that an IPv6 host is bracketed.
+    let host = match rest.rsplit_once(':') {
+        Some((host, _port)) => host,
+        None => rest,
+    };
+
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "localhost" | "127.0.0.1" | "[::1]"
+    )
 }
 
 /// Writes `~/.gitdaemon/server.json` so the client can discover the daemon.

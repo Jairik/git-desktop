@@ -1,6 +1,6 @@
 //! Remote management.
 
-use super::GitRunner;
+use super::{reject_option, GitRunner};
 use crate::error::ApiError;
 use crate::models::Remote;
 
@@ -40,6 +40,8 @@ pub async fn list_remotes(runner: &GitRunner, path: &str) -> Result<Vec<Remote>,
 
 /// Adds a remote.
 pub async fn add_remote(runner: &GitRunner, path: &str, name: &str, url: &str) -> Result<(), ApiError> {
+    reject_option(name)?;
+
     runner
         .run_in(
             path,
@@ -56,6 +58,8 @@ pub async fn add_remote(runner: &GitRunner, path: &str, name: &str, url: &str) -
 
 /// Removes a remote.
 pub async fn remove_remote(runner: &GitRunner, path: &str, name: &str) -> Result<(), ApiError> {
+    reject_option(name)?;
+
     runner
         .run_in(
             path,
@@ -71,6 +75,8 @@ pub async fn remove_remote(runner: &GitRunner, path: &str, name: &str) -> Result
 
 /// Changes the URL of a remote.
 pub async fn set_url(runner: &GitRunner, path: &str, name: &str, url: &str) -> Result<(), ApiError> {
+    reject_option(name)?;
+
     runner
         .run_in(
             path,

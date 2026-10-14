@@ -93,17 +93,19 @@ pub async fn clone(
     default_branch: Option<&str>,
     bus: &EventBus,
 ) -> Result<(), ApiError> {
-    let mut args = vec![
-        "clone".to_string(),
-        "--progress".to_string(),
-        url.to_string(),
-        path.to_string(),
-    ];
+    let mut args = vec!["clone".to_string(), "--progress".to_string()];
 
+    // Options come first: everything after `--` is a positional argument, so
+    // this is what keeps a url or a path that starts with `-` from being read
+    // as an option.
     if let Some(branch) = branch {
         args.push("--branch".to_string());
         args.push(branch.to_string());
     }
+
+    args.push("--".to_string());
+    args.push(url.to_string());
+    args.push(path.to_string());
 
     run_with_progress(None, args, bus, "clone.progress").await?;
 

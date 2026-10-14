@@ -210,6 +210,23 @@ fn run_blocking(opts: RunOptions) -> std::io::Result<GitOutput> {
 
     let mut child = command.spawn()?;
 
+    // Stdout and stderr have to be drained concurrently: a git command that
+    // writes more than a pipe buffer's worth (~64KB) of output would otherwise
+    // block forever against a read that only happens after the other pipe
+    // filled up. stderr goes to a thread, stdout is read here.
+    let stderr_handle = child.stderr.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut stderr = String::new();
+            let _ = pipe.read_to_string(&mut stderr);
+            stderr
+        })
+    });
+
+    // Write (small) stdin and close it FIRST so the child sees EOF. A child
+    // that reads stdin before emitting stdout (e.g. `commit -F -` reading the
+    // message) would otherwise deadlock: it blocks reading stdin while we block
+    // reading stdout to EOF. stdin here is only ever small (commit messages,
+    // config values).
     if let Some(stdin) = &opts.stdin {
         if let Some(mut pipe) = child.stdin.take() {
             // A closed pipe (EPIPE) means git exited before consuming the
@@ -225,10 +242,10 @@ fn run_blocking(opts: RunOptions) -> std::io::Result<GitOutput> {
         pipe.read_to_end(&mut stdout)?;
     }
 
-    let mut stderr = String::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        pipe.read_to_string(&mut stderr)?;
-    }
+    let stderr = match stderr_handle {
+        Some(handle) => handle.join().unwrap_or_default(),
+        None => String::new(),
+    };
 
     let status = child.wait()?;
 
@@ -237,6 +254,45 @@ fn run_blocking(opts: RunOptions) -> std::io::Result<GitOutput> {
         stderr,
         code: status.code().unwrap_or(-1),
     })
+}
+
+/// Whether git's stderr for an exit code 128 means the path is not a git
+/// repository at all.
+///
+/// Git also exits 128 for a bare repository, a permission problem or a corrupt
+/// object database; those must surface as errors instead of being reported as
+/// an empty repository.
+pub(crate) fn is_missing_repository(stderr: &str) -> bool {
+    let stderr = stderr.to_lowercase();
+
+    stderr.contains("not a git repository") || stderr.contains("dubious ownership")
+}
+
+/// Whether git's stderr for an exit code 128 means there is no history to
+/// report: an unborn HEAD, or a path that isn't a repository at all.
+pub(crate) fn is_empty_history(stderr: &str) -> bool {
+    let stderr = stderr.to_lowercase();
+
+    is_missing_repository(&stderr) || stderr.contains("does not have any commits yet")
+}
+
+/// Rejects a value git would read as one of its own options.
+///
+/// argv is handed to git without a shell, but a value like `--upload-pack=…`
+/// still becomes an option, so every client supplied ref, name or sha has to
+/// be validated (or separated with `--`/`--end-of-options`) before use.
+pub fn reject_option(value: &str) -> Result<(), ApiError> {
+    if value.is_empty() {
+        return Err(ApiError::bad_request("value must not be empty"));
+    }
+
+    if value.starts_with('-') {
+        return Err(ApiError::bad_request(format!(
+            "value must not start with '-': {value}"
+        )));
+    }
+
+    Ok(())
 }
 
 /// Splits NUL-delimited output into non-empty strings.

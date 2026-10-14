@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::GitRunner;
+use super::{reject_option, GitRunner};
 use crate::error::ApiError;
 
 /// Lists the tags of a repository, keyed on tag name.
@@ -38,6 +38,9 @@ pub async fn create_tag(
     name: &str,
     target_commit_sha: &str,
 ) -> Result<(), ApiError> {
+    reject_option(name)?;
+    reject_option(target_commit_sha)?;
+
     runner
         .run_in(
             path,

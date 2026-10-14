@@ -1,25 +1,27 @@
 //! Repository configuration and author identity.
 
-use super::GitRunner;
+use super::{reject_option, GitRunner};
 use crate::error::ApiError;
 use crate::git::commit::parse_commit_identity;
 use crate::models::CommitIdentity;
 
 /// Reads a config value, returning `None` when it isn't set.
 ///
-/// When `path` is omitted the global config is read.
+/// When `path` is omitted the global config is read; otherwise git's own
+/// lookup is used (repository values override the user's global ones) unless
+/// `only_local` restricts it to the repository's config file.
 pub async fn get_config_value(
     runner: &GitRunner,
     path: Option<&str>,
     name: &str,
     only_local: bool,
 ) -> Result<Option<String>, ApiError> {
-    let args = vec![
-        "config".to_string(),
-        config_scope(path, only_local),
-        "--get".to_string(),
-        name.to_string(),
-    ];
+    reject_option(name)?;
+
+    let mut args = vec!["config".to_string()];
+    args.extend(config_scope(path, only_local));
+    args.push("--get".to_string());
+    args.push(name.to_string());
 
     let output = match path {
         Some(path) => runner.run_in_with(path, &args, &[0, 1]).await?,
@@ -44,12 +46,12 @@ pub async fn set_config_value(
     value: &str,
     only_local: bool,
 ) -> Result<(), ApiError> {
-    let args = vec![
-        "config".to_string(),
-        config_scope(path, only_local),
-        name.to_string(),
-        value.to_string(),
-    ];
+    reject_option(name)?;
+
+    let mut args = vec!["config".to_string()];
+    args.extend(config_scope(path, only_local));
+    args.push(name.to_string());
+    args.push(value.to_string());
 
     match path {
         Some(path) => runner.run_in_with(path, &args, &[0]).await,
@@ -58,12 +60,17 @@ pub async fn set_config_value(
     .map(|_| ())
 }
 
-/// The `--local`/`--global` flag for a config call.
-fn config_scope(path: Option<&str>, only_local: bool) -> String {
-    if only_local || path.is_some() {
-        "--local".to_string()
-    } else {
-        "--global".to_string()
+/// The scope flag for a config call, or `None` for git's default lookup.
+///
+/// `onlyLocal` narrows a repository read to `.git/config` alone; without it git
+/// merges the repository, global and system config, which is what `git config`
+/// itself does. With no repository there is nothing local to read, so the
+/// global config is the only sensible target.
+fn config_scope(path: Option<&str>, only_local: bool) -> Option<String> {
+    match path {
+        None => Some("--global".to_string()),
+        Some(_) if only_local => Some("--local".to_string()),
+        Some(_) => None,
     }
 }
 

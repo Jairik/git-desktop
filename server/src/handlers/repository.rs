@@ -109,17 +109,11 @@ pub async fn repo_type(state: &AppState, params: Value) -> Result<Value, ApiErro
 pub async fn repo_set_alias(state: &AppState, params: Value) -> Result<Value, ApiError> {
     let params: SetAliasParams = params_of(params)?;
 
-    let entry = {
-        let mut store = state.lock_store();
-
-        // Register unknown repositories instead of failing: the client only
-        // ever asks to rename repositories it has open.
-        if store.find(&params.path).is_none() {
-            store.upsert(&params.path, None);
-        }
-
-        store.set_alias(&params.path, params.alias.as_deref())
-    };
+    // Only repositories the client has opened can be renamed; an unknown path
+    // is a `not_found` rather than a silent registration.
+    let entry = state
+        .lock_store()
+        .set_alias(&params.path, params.alias.as_deref());
 
     let entry = entry.ok_or_else(|| {
         ApiError::not_found(format!("repository not found in store: {}", params.path))

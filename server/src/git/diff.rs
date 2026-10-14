@@ -603,6 +603,14 @@ fn parse_range(value: &str) -> Option<(u32, u32)> {
     }
 }
 
+/// Strips the leading `+`/`-`/space marker from a diff line.
+///
+/// The contract reports `text` without the marker (it can be recovered from
+/// `type`), while the hunk's raw `contents` keeps it.
+fn strip_marker(line: &str) -> String {
+    line.get(1..).unwrap_or_default().to_string()
+}
+
 /// Parses a unified diff into its body text and hunks.
 ///
 /// The returned text is the diff without its `diff --git` header, matching the
@@ -658,7 +666,7 @@ pub fn parse_text_diff(text: &str) -> (String, Vec<Hunk>) {
                     new_line_number += 1;
                     Some(DiffLine {
                         diff_type: DiffLineType::Context,
-                        text: line.to_string(),
+                        text: strip_marker(line),
                         old_line_number: Some(old_line_number - 1),
                         new_line_number: Some(new_line_number - 1),
                     })
@@ -667,7 +675,7 @@ pub fn parse_text_diff(text: &str) -> (String, Vec<Hunk>) {
                     new_line_number += 1;
                     Some(DiffLine {
                         diff_type: DiffLineType::Add,
-                        text: line.to_string(),
+                        text: strip_marker(line),
                         old_line_number: None,
                         new_line_number: Some(new_line_number - 1),
                     })
@@ -676,7 +684,7 @@ pub fn parse_text_diff(text: &str) -> (String, Vec<Hunk>) {
                     old_line_number += 1;
                     Some(DiffLine {
                         diff_type: DiffLineType::Delete,
-                        text: line.to_string(),
+                        text: strip_marker(line),
                         old_line_number: Some(old_line_number - 1),
                         new_line_number: None,
                     })
@@ -690,7 +698,7 @@ pub fn parse_text_diff(text: &str) -> (String, Vec<Hunk>) {
 
             if let Some(diff_line) = diff_line {
                 contents.push('\n');
-                contents.push_str(&diff_line.text);
+                contents.push_str(line);
                 hunk_lines.push(diff_line);
             }
         }

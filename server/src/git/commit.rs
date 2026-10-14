@@ -1,6 +1,8 @@
 //! Commit creation, history and commit manipulation.
 
-use super::{split_nul, split_nul_fields, GitOutput, GitRunner};
+use super::{
+    is_empty_history, reject_option, split_nul, split_nul_fields, GitOutput, GitRunner,
+};
 use crate::error::ApiError;
 use crate::models::{
     ChangedFilesResult, Commit, CommitIdentity, CommitOneLine, FileChange, AppFileStatus,
@@ -125,10 +127,14 @@ pub async fn list_log(
 
     args.push("--".to_string());
 
-    // Exit code 128 means the repository has an unborn HEAD, i.e. no history.
+    // Exit code 128 means either an unborn HEAD (no history yet) or a path
+    // that isn't a repository; both report an empty history. Anything else
+    // (bare repo, permissions) is surfaced as an error.
     let output = match runner.run_in_vec(path, args).await {
         Ok(output) => output,
-        Err(ApiError::GitError { code: 128, .. }) => return Ok(Vec::new()),
+        Err(ApiError::GitError { code: 128, stderr, .. }) if is_empty_history(&stderr) => {
+            return Ok(Vec::new())
+        }
         Err(error) => return Err(error),
     };
 
@@ -162,7 +168,9 @@ pub async fn list_one_line(
 
     let output = match runner.run_in_vec(path, args).await {
         Ok(output) => output,
-        Err(ApiError::GitError { code: 128, .. }) => return Ok(Vec::new()),
+        Err(ApiError::GitError { code: 128, stderr, .. }) if is_empty_history(&stderr) => {
+            return Ok(Vec::new())
+        }
         Err(error) => return Err(error),
     };
 
@@ -265,6 +273,8 @@ pub async fn undo_commit(runner: &GitRunner, path: &str, sha: &str) -> Result<()
 
 /// Moves HEAD onto the given commit using the given reset mode.
 pub async fn reset_to(runner: &GitRunner, path: &str, sha: &str, mode: &str) -> Result<(), ApiError> {
+    reject_option(sha)?;
+
     let mode = mode.trim();
 
     if !matches!(mode, "soft" | "mixed" | "hard") {

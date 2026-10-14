@@ -120,13 +120,6 @@ impl RepositoryStore {
         Some(self.repositories.remove(position))
     }
 
-    /// Returns the stored entry for the given path.
-    pub fn find(&self, path: &str) -> Option<&StoredRepository> {
-        let id = repository_id(path);
-
-        self.repositories.iter().find(|entry| entry.id == id)
-    }
-
     /// All entries, oldest first (newest last).
     pub fn entries(&self) -> &[StoredRepository] {
         &self.repositories
@@ -205,20 +198,24 @@ fn normalize(path: &str) -> String {
 
 /// Returns the directory the daemon stores its data in.
 ///
-/// This is `<cwd>/data` when the daemon runs from inside `server/` and
-/// `<cwd>/server/data` otherwise, so it always lands in `server/data/`.
+/// The location must not depend on the process' working directory, so the
+/// default is `~/.gitdaemon/data`; `GITDAEMON_DATA_DIR` overrides it (used by
+/// tests and packagers). The directory is created if it doesn't exist.
 pub fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("GITDAEMON_DATA_DIR") {
-        return PathBuf::from(dir);
+    let dir = match std::env::var_os("GITDAEMON_DATA_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => match std::env::var_os("HOME") {
+            Some(home) if !home.is_empty() => Path::new(&home).join(".gitdaemon").join("data"),
+            _ => PathBuf::from(".gitdaemon").join("data"),
+        },
+    };
+
+    if std::fs::create_dir_all(&dir).is_err() {
+        crate::log::warn("Failed to create the data directory")
+            .field("path", dir.display().to_string());
     }
 
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-
-    if cwd.file_name().map(|name| name == "server").unwrap_or(false) {
-        cwd.join("data")
-    } else {
-        cwd.join("server").join("data")
-    }
+    dir
 }
 
 /// Converts a store entry into a repository to report to the client.
