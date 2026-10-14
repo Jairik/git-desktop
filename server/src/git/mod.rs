@@ -23,6 +23,7 @@ pub mod status;
 pub mod tags;
 
 use std::io::{Read, Write};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::error::ApiError;
@@ -106,6 +107,18 @@ pub struct GitRunner;
 impl GitRunner {
     /// Runs a git command, returning [`ApiError::GitError`] on failure.
     pub async fn run(&self, opts: RunOptions) -> Result<GitOutput, ApiError> {
+        // A repository that vanished from disk (deleted, or a drive that is no
+        // longer mounted) is reported as a clean `not_found` instead of git's
+        // raw `fatal: cannot change to ...` stderr. `repo.init` creates its
+        // directory before calling in, so every legit in-repo call still runs.
+        if let Some(path) = &opts.path {
+            if !Path::new(path).is_dir() {
+                return Err(ApiError::not_found(format!(
+                    "repository directory not found: {path}"
+                )));
+            }
+        }
+
         let argv = opts.argv();
         let opts_for_blocking = opts.clone();
 

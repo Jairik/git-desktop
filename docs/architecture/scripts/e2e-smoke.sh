@@ -39,7 +39,11 @@ git -C "$TMP/repo" add -A
 git -C "$TMP/repo" commit -qm "initial commit"
 
 echo "== starting daemon on :$PORT =="
-GITDAEMON_PORT=$PORT "$BIN" >/tmp/opencode/gitdaemon-e2e.log 2>&1 &
+# GITDAEMON_DATA_DIR keeps the e2e `repo.open` write out of the developer's
+# real ~/.gitdaemon store — without it every run leaves a dead repo entry
+# behind (the scratch repos live in a mktemp dir that is deleted on exit).
+GITDAEMON_PORT=$PORT GITDAEMON_DATA_DIR="$TMP/gitdaemon-data" \
+  "$BIN" >/tmp/opencode/gitdaemon-e2e.log 2>&1 &
 SRV=$!
 for _ in $(seq 1 50); do curl -sf "$BASE/health" >/dev/null && break; sleep 0.2; done
 

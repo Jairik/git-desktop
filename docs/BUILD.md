@@ -25,10 +25,13 @@ browser UI and the desktop window (same URL, same code).
 ## Build everything
 
 ```sh
-yarn build            # = build:server (cargo --release) + build:client (vite build)
+./build.sh           # the one command: daemon (cargo --release) + client (vite build)
 ```
 
-Produces `server/target/release/gitdaemon` and `client/dist/`.
+Produces `server/target/release/gitdaemon` and `client/dist/`, verifies both
+outputs, and prints how to run the result. Equivalent yarn wrapper:
+`yarn build` (= `yarn build:server && yarn build:client`), but `./build.sh`
+needs no yarn — only `node`, `npm` and `cargo` on your `PATH`.
 
 ## Build the pieces
 

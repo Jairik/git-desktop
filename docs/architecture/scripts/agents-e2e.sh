@@ -84,8 +84,10 @@ printf 'hello\nworld\n' > "$R/a.txt"; git -C "$R" add -A; git -C "$R" commit -qm
 printf 'hello\nCHANGED\n' > "$R/a.txt"; git -C "$R" add -A   # staged change
 
 echo "== starting agent daemon on :$PORT =="
-GITDAEMON_PORT=$PORT GITDAEMON_AGENTS_CONFIG="$TMP/agents.toml" PATH="$TMP/fakebin:$PATH" \
-  "$BIN" >/tmp/opencode/gitdaemon-agent.log 2>&1 &
+# GITDAEMON_DATA_DIR keeps the e2e `repo.open`/`comment.*` writes out of the
+# developer's real ~/.gitdaemon store (see e2e-smoke.sh for the same reason).
+GITDAEMON_PORT=$PORT GITDAEMON_AGENTS_CONFIG="$TMP/agents.toml" GITDAEMON_DATA_DIR="$TMP/gitdaemon-data" \
+  PATH="$TMP/fakebin:$PATH" "$BIN" >/tmp/opencode/gitdaemon-agent.log 2>&1 &
 SRV=$!
 for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 0.2; done
 
@@ -121,7 +123,8 @@ check "comment.send.status"  '"status":"sent"'     "$CS"
 echo "== SPA serve (GITDAEMON_SERVE_DIR) =="
 mkdir -p "$TMP/site"
 printf '<!doctype html><title>spa-index</title>OKSPA' > "$TMP/site/index.html"
-GITDAEMON_PORT=$SPA_PORT GITDAEMON_SERVE_DIR="$TMP/site" "$BIN" >/tmp/opencode/gitdaemon-spa.log 2>&1 &
+GITDAEMON_PORT=$SPA_PORT GITDAEMON_SERVE_DIR="$TMP/site" GITDAEMON_DATA_DIR="$TMP/gitdaemon-spa-data" \
+  "$BIN" >/tmp/opencode/gitdaemon-spa.log 2>&1 &
 SRV_SPA=$!
 for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:$SPA_PORT/health" >/dev/null && break; sleep 0.2; done
 check "spa.root"         'OKSPA'      "$(curl -s "http://127.0.0.1:$SPA_PORT/")"

@@ -613,16 +613,20 @@ const StoreContext = createContext<{ state: AppState; actions: StoreActions } | 
 
 let nextErrorId = 1
 
-/** Turn any thrown value into an AppError (with git stderr when present). */
+/** Turn any thrown value into an AppError (with git/agent stderr when it adds
+ * something the message doesn't already say). */
 function toAppError(error: unknown): AppError {
   if (error instanceof RpcError) {
-    const data = error.data as { stderr?: string; args?: unknown } | undefined
-    const detail =
-      data && typeof data === 'object'
-        ? [data.stderr, data.args ? `args: ${JSON.stringify(data.args)}` : null]
-            .filter(Boolean)
-            .join('\n') || undefined
-        : undefined
+    // For git/gh errors the message already carries the tool's stderr (see
+    // `ApiError::message`), so only attach stderr when it is something new
+    // (agent failures) — otherwise the toast would print it twice. The raw
+    // argv that used to be appended is debug noise for a user-facing toast.
+    const data = error.data as { stderr?: string } | undefined
+    const stderr =
+      data && typeof data === 'object' && typeof data.stderr === 'string'
+        ? data.stderr.trim()
+        : ''
+    const detail = stderr && stderr !== error.message ? stderr : undefined
     return { id: nextErrorId++, message: error.message, detail, code: error.code }
   }
   return {
