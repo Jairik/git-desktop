@@ -66,5 +66,23 @@ check "unknown.method"  'bad_request' "$(rpc nope.nope '{}')"
 ST2="$(rpc status.get "{\"path\":\"$TMP/repo\"}")"
 check "status.clean"    '"files":[]'  "$ST2"
 
+# A path with a space must be reported in full (not truncated at the space).
+printf 'spaced\n' > "$TMP/repo/my file.txt"
+SPS="$(rpc status.get "{\"path\":\"$TMP/repo\"}")"
+check "status.spacePath"  '"path":"my file.txt"' "$SPS"
+check "status.spaceStage" '"ok":true' "$(rpc status.stage "{\"path\":\"$TMP/repo\",\"files\":[\"my file.txt\"]}")"
+rpc commit.create "{\"path\":\"$TMP/repo\",\"message\":{\"summary\":\"spaced file\"}}" >/dev/null
+
+# ahead/behind must reflect the true local-vs-upstream delta (not swapped).
+git init -q --bare "$TMP/remote.git"
+git -C "$TMP/repo" remote add origin "$TMP/remote.git" 2>/dev/null || true
+git -C "$TMP/repo" push -q origin HEAD:refs/heads/e2e-branch
+git -C "$TMP/repo" branch --set-upstream-to=origin/e2e-branch e2e-branch 2>/dev/null || true
+printf 'local-only\n' >> "$TMP/repo/a.txt"
+git -C "$TMP/repo" commit -qam "local ahead commit"
+ABS="$(rpc status.get "{\"path\":\"$TMP/repo\"}")"
+check "ab.ahead1"  '"ahead":1'  "$ABS"
+check "ab.behind0" '"behind":0' "$ABS"
+
 echo "== result: $pass passed, $fail failed =="
 [[ $fail -eq 0 ]]

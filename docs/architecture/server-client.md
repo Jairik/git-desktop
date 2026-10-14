@@ -22,13 +22,14 @@ git engine — the server shells out to the `git` CLI behind a clean abstraction
     each with `{ phase: string, value: number /*0..100*/ , detail?: string }`.
 - **Discovery:** `GET /health` → `{ "ok": true, "version": <string> }`.
   `GET /info` → `{ "name": "…", "version": "…", "port": <number> }`.
-- **CORS:** server allows any origin (local dev). Bind to `127.0.0.1` by default.
+- **CORS:** server allows loopback origins only (localhost / 127.0.0.1 / [::1] / `null`). Bind to `127.0.0.1` by default.
 - **Port:** default `4789`; override with env `GITDAEMON_PORT`. The server writes a
   discovery file `~/.gitdaemon/server.json` = `{ "url": "http://127.0.0.1:<port>" }`
   on start (best-effort; client may just default to `http://127.0.0.1:4789`).
 - **Errors** use these `code` values: `bad_request` (malformed/unknown method),
   `not_found` (repo/ref missing), `git_error` (git command failed; `data.stderr`
-  carries git's stderr, `data.args` carries the argv), `io_error`, `conflict`.
+  carries git's stderr, `data.args` carries the argv), `io_error`, `conflict`,
+  and `internal_error` (unexpected server-side failure/panic).
 
 All paths sent by the client are **absolute server-side paths**. The server treats
 them as trusted (local single-user daemon).
@@ -193,7 +194,7 @@ working-tree path (or git dir for bare). Numbers default as noted.
 
 ### Network  (emit progress on the matching `/ws` event; still return final result)
 - `fetch` `{ path, remote?, pruneBackground? }` → `{}`  (`git fetch --prune` or `--all` if remote omitted)
-- `pull` `{ path, remote }` → `{}`  (`git pull`)
+- `pull` `{ path, remote? }` → `{}`  (`git pull`; omitting `remote` pulls the branch's configured upstream)
 - `push` `{ path, remote, localBranch, remoteBranch?: string | null, tagsToPush?: string[], forceWithLease? = false }` → `{}`
 - `clone` `{ url, path, options?: { branch?, defaultBranch? } }` → `Repository`  (register in store on success)
 

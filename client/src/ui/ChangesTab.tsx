@@ -21,6 +21,7 @@ export function ChangesTab() {
   const path = state.selectedRepoPath as string
   const status = state.status
   const files = status?.workingDirectory.files ?? []
+  const busy = state.busy !== null
 
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -91,6 +92,7 @@ export function ChangesTab() {
   /* ------------------------------ actions ------------------------- */
 
   const commit = async () => {
+    if (busy) return
     const trimmed = summary.trim()
     if (trimmed.length === 0) return
     const ok = await actions.runMutation('Commit', () =>
@@ -108,6 +110,7 @@ export function ChangesTab() {
   }
 
   const setInclusion = async (file: FileChange, include: boolean) => {
+    if (busy) return
     setExcluded((prev) => {
       const next = new Set(prev)
       if (include) next.delete(file.id)
@@ -122,6 +125,7 @@ export function ChangesTab() {
   }
 
   const stageAll = async () => {
+    if (busy) return
     const targets = files.map((f) => f.path)
     if (targets.length === 0) return
     const ok = await actions.runMutation('Stage all', () => methods.statusStage(path, targets))
@@ -129,11 +133,13 @@ export function ChangesTab() {
   }
 
   const unstageAll = async () => {
+    if (busy) return
     const ok = await actions.runMutation('Unstage all', () => methods.statusUnstageAll(path))
     if (ok !== null) setExcluded(new Set())
   }
 
   const discard = async (targets: string[]) => {
+    if (busy) return
     if (targets.length === 0) return
     await actions.runMutation('Discard', () =>
       methods.statusDiscard(path, targets, true, false),
@@ -165,10 +171,10 @@ export function ChangesTab() {
           <span className="title">
             Changes <span className="count">({files.length})</span>
           </span>
-          <Button small variant="ghost" onClick={() => void stageAll()} disabled={files.length === 0}>
+          <Button small variant="ghost" onClick={() => void stageAll()} disabled={files.length === 0 || busy}>
             Stage all
           </Button>
-          <Button small variant="ghost" onClick={() => void unstageAll()} disabled={files.length === 0}>
+          <Button small variant="ghost" onClick={() => void unstageAll()} disabled={files.length === 0 || busy}>
             Unstage all
           </Button>
         </div>
@@ -194,6 +200,7 @@ export function ChangesTab() {
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={busy}
                   aria-label={`Include ${file.path}`}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => void setInclusion(file, e.target.checked)}
@@ -206,6 +213,7 @@ export function ChangesTab() {
                   <ConfirmButton
                     small
                     variant="ghost"
+                    disabled={busy}
                     title={`Discard changes in ${file.path}`}
                     aria-label={`Discard ${file.path}`}
                     question="Discard?"
@@ -246,7 +254,7 @@ export function ChangesTab() {
           <div className="commit-actions">
             <Button
               variant="primary"
-              disabled={!canCommit}
+              disabled={!canCommit || busy}
               busy={state.busy === 'Commit'}
               onClick={() => void commit()}
             >
@@ -259,6 +267,7 @@ export function ChangesTab() {
             {selectedChange ? (
               <ConfirmButton
                 small
+                disabled={busy}
                 title={`Discard changes in ${selectedChange.path}`}
                 question={`Discard ${selectedChange.path}?`}
                 confirmLabel="Discard"

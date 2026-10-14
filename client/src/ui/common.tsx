@@ -52,13 +52,14 @@ export function ConfirmButton({
   confirmLabel = 'Confirm',
   question = 'Are you sure?',
   onConfirm,
+  disabled,
   ...buttonProps
 }: ButtonProps & { confirmLabel?: string; question?: string; onConfirm: () => void }) {
   const [asking, setAsking] = useState(false)
 
   if (!asking) {
     return (
-      <Button {...buttonProps} onClick={() => setAsking(true)}>
+      <Button {...buttonProps} disabled={disabled} onClick={() => setAsking(true)}>
         {buttonProps.children}
       </Button>
     )
@@ -69,7 +70,9 @@ export function ConfirmButton({
       <Button
         small
         variant="danger"
+        disabled={disabled}
         onClick={() => {
+          if (disabled) return
           setAsking(false)
           onConfirm()
         }}

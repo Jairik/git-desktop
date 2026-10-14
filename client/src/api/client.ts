@@ -37,6 +37,7 @@ export type RpcErrorCode =
   | 'git_error'
   | 'io_error'
   | 'conflict'
+  | 'internal_error'
   /* client-only codes */
   | 'unreachable'
   | 'http_error'
@@ -152,6 +153,13 @@ export async function rpc<T>(
   const envelope = body as { id?: number; ok?: boolean; result?: unknown; error?: { code?: string; message?: string; data?: unknown } }
   if (typeof envelope.ok !== 'boolean') {
     throw new RpcError('bad_response', `${method}: malformed response envelope`)
+  }
+  if (envelope.id !== id) {
+    throw new RpcError(
+      'bad_request',
+      `${method}: response id mismatch (expected ${id}, got ${envelope.id})`,
+      { expectedId: id, responseId: envelope.id },
+    )
   }
 
   if (envelope.ok) {
