@@ -100,6 +100,16 @@ check "agent.commit_message" '"FAKEAGENT-OUTPUT"' "$CMP"
 RV="$(rpc agent.review "{\"path\":\"$R\",\"target\":{\"kind\":\"file\",\"file\":\"a.txt\"}}")"
 check "agent.review"         '"FAKEAGENT-OUTPUT"' "$RV"
 
+# Path traversal guard: a repo-relative `file` must never be read as an absolute
+# path (which would replace the base in a join) or escape with `..`.
+# Both must come back as a `bad_request` error envelope, never file contents.
+check "agent.summarize.blockAbs"   'bad_request' \
+  "$(rpc agent.summarize_file "{\"path\":\"$R\",\"file\":\"/etc/hasswd\"}")"
+check "agent.summarize.blockDotDot" 'bad_request' \
+  "$(rpc agent.summarize_file "{\"path\":\"$R\",\"file\":\"../../etc/hasswd\"}")"
+check "agent.summarize.blockEmpty" 'bad_request' \
+  "$(rpc agent.summarize_file "{\"path\":\"$R\",\"file\":\"\"}")"
+
 CC="$(rpc comment.create "{\"path\":\"$R\",\"file\":\"a.txt\",\"body\":\"why changed?\"}")"
 check "comment.created"      '"body":"why changed?"' "$CC"
 check "comment.listed"       'why changed?'          "$(rpc comment.list "{\"path\":\"$R\"}")"

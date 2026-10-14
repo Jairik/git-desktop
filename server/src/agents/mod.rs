@@ -21,6 +21,8 @@
 //!   helpers (spawn, capture stdout+stderr+exit, enforce a timeout).
 //! - the small `PATH` resolver (`resolve_executable`) used to report a binary's
 //!   location for [`crate::models::DetectedAgent`].
+//! - the repo-file guard ([`safe_join_repo_file`]) every handler that reads a
+//!   client-supplied file path applies before touching the filesystem.
 //! - the **config**: [`RawAgentsConfig`] (the on-disk TOML shape) plus a
 //!   conversion to/from the camelCase [`crate::models::AgentsConfig`] wire shape
 //!   and the read/persist resolution in [`load_config`]/[`write_config`].
@@ -120,7 +122,7 @@ impl AgentRunner {
     pub async fn detect(&self, spec: &AgentSpec) -> DetectedAgent {
         let path = resolve_executable(&spec.command);
         let command = spec.command.clone();
-        let detect = spec.detect.clone();
+        let detect = detect_argv(spec);
 
         let spawned = tokio::task::spawn_blocking(move || {
             run_agent_blocking(
@@ -186,6 +188,19 @@ impl AgentRunner {
 // Low-level subprocess spawn (runs inside `spawn_blocking`)
 // ---------------------------------------------------------------------------
 
+/// The probe argv used to detect whether an agent is installed.
+///
+/// A spec with no `detect` argv would run the bare command, which for an
+/// interactive agent means launching its TUI from a probe; every agent we know
+/// answers `--version` instantly and non-interactively, so that is the default.
+fn detect_argv(spec: &AgentSpec) -> Vec<String> {
+    if spec.detect.is_empty() {
+        vec!["--version".to_string()]
+    } else {
+        spec.detect.clone()
+    }
+}
+
 /// Spawns an agent synchronously; intended to run inside [`AgentRunner`]'s
 /// `spawn_blocking`.
 ///
@@ -225,11 +240,25 @@ fn run_agent_blocking(
     child_command.stdout(Stdio::piped());
     child_command.stderr(Stdio::piped());
 
+    // Run the agent in its own process group so a timeout can take down the
+    // whole tree. Agents routinely spawn subprocesses that inherit the pipes,
+    // and killing only the direct child leaves those grandchildren holding
+    // stdout/stderr open — which blocks the reader threads below forever.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        child_command.process_group(0);
+    }
+
     // Fails with NotFound here when the binary isn't installed; mapped by the
     // caller.
     let mut child = child_command.spawn()?;
 
     let stdout_handle = child.stdout.take().map(|mut pipe| {
+        // Draining stdout on its own thread (rather than reading it after the
+        // child exits) is what keeps a chatty agent from filling the pipe
+        // buffer and deadlocking against us — do not "simplify" this away.
         std::thread::spawn(move || {
             let mut buffer = String::new();
             let _ = pipe.read_to_string(&mut buffer);
@@ -238,6 +267,8 @@ fn run_agent_blocking(
     });
 
     let stderr_handle = child.stderr.take().map(|mut pipe| {
+        // See the stdout reader: stderr is drained concurrently for the same
+        // deadlock reason.
         std::thread::spawn(move || {
             let mut buffer = String::new();
             let _ = pipe.read_to_string(&mut buffer);
@@ -261,9 +292,15 @@ fn run_agent_blocking(
             }
             None => {
                 if Instant::now() >= deadline {
-                    // Kill the child (closing its pipes wakes the reader
-                    // threads), reap it, and report the timeout.
+                    // Kill the whole process group (TERM, then KILL) so every
+                    // grandchild holding a pipe dies too; only then join the
+                    // readers, which EOF once the group is gone. Reaping the
+                    // child afterwards keeps it from lingering as a zombie.
+                    #[cfg(unix)]
+                    let pid = child.id();
                     let _ = child.kill();
+                    #[cfg(unix)]
+                    kill_process_group(pid);
                     let _ = child.wait();
                     join_reader(stdout_handle);
                     join_reader(stderr_handle);
@@ -278,6 +315,23 @@ fn run_agent_blocking(
             }
         }
     }
+}
+
+/// Signals an agent's whole process group, best effort and without `libc`.
+///
+/// The child is spawned with `process_group(0)`, so its pid is also its group
+/// id: `kill -TERM -<pid>` reaches every descendant. TERM first (a graceful
+/// wind-down), then KILL so nothing can outlive the timeout.
+#[cfg(unix)]
+fn kill_process_group(pid: u32) {
+    let group = format!("-{pid}");
+
+    let _ = Command::new("kill").arg("-TERM").arg(&group).status();
+
+    // A short grace period for the group to exit on TERM.
+    std::thread::sleep(Duration::from_millis(100));
+
+    let _ = Command::new("kill").arg("-KILL").arg(&group).status();
 }
 
 /// Joins a reader thread, tolerating a panic (yielding the empty string).
@@ -673,5 +727,57 @@ fn to_raw(config: &AgentsConfig) -> RawAgentsConfig {
                 )
             })
             .collect(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Repository file paths
+// ---------------------------------------------------------------------------
+
+/// Resolves the repo-relative `file` against `repo_path`, refusing anything that
+/// could escape the repository.
+///
+/// The `file` parameter is arbitrary client input, so it is validated **before**
+/// any read: an empty path, an absolute path (which would silently replace the
+/// base in `Path::join`) and any `..` component are rejected outright, and the
+/// joined result must canonicalize to a path inside the canonicalized
+/// repository — which also rejects symlinks pointing out of the repo.
+///
+/// When the joined path cannot be canonicalized (a file that isn't there yet)
+/// the plain join is returned, so the caller still reports `not_found` rather
+/// than a misleading escape error.
+pub fn safe_join_repo_file(repo_path: &str, file: &str) -> Result<PathBuf, ApiError> {
+    if file.trim().is_empty() {
+        return Err(ApiError::bad_request("empty file path"));
+    }
+
+    let relative = Path::new(file);
+
+    if relative.is_absolute() {
+        return Err(ApiError::bad_request(
+            "path escapes repository: absolute paths are not allowed",
+        ));
+    }
+
+    if relative
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(ApiError::bad_request(
+            "path escapes repository: '..' is not allowed",
+        ));
+    }
+
+    let joined = Path::new(repo_path).join(relative);
+
+    // Canonicalize both sides: the repo itself may not exist yet (or the file may
+    // be gone), in which case we keep the lexical join and let the read fail.
+    let repo_root =
+        std::fs::canonicalize(repo_path).unwrap_or_else(|_| Path::new(repo_path).to_path_buf());
+
+    match std::fs::canonicalize(&joined) {
+        Ok(resolved) if resolved.starts_with(&repo_root) => Ok(resolved),
+        Ok(_) => Err(ApiError::bad_request("path escapes repository")),
+        Err(_) => Ok(joined),
     }
 }

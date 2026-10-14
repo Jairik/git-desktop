@@ -107,6 +107,15 @@ function spawnChild({ cmd, args = [], env = process.env, label = cmd }) {
 
   const exited = new Promise(resolve => {
     child.on('exit', (code, signal) => resolve({ code, signal }))
+    // A daemon that never spawned (a missing / non-executable binary) surfaces
+    // as an 'error' event rather than an 'exit'; with no listener Node would
+    // throw and take the main process down. Funnel it through the same `exited`
+    // promise as an early, failed exit so the cleanup path runs.
+    child.on('error', error => {
+      const message = error && error.message ? error.message : String(error)
+      process.stderr.write(`[${label}] spawn error: ${message}\n`)
+      resolve({ code: null, signal: null, error: message })
+    })
   })
 
   const running = () => child.exitCode === null && child.signalCode === null
@@ -311,7 +320,9 @@ async function launch() {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        // The preload only uses contextBridge, so it runs sandboxed: no Node
+        // built-ins in the preload, and a much smaller renderer attack surface.
+        sandbox: true,
         preload: path.join(__dirname, 'preload.js'),
         // Handed to the preload so it can set window.GITDAEMON_URL on the real
         // page before the client bundle runs (see preload.js).

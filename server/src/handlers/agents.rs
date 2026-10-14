@@ -6,8 +6,9 @@
 //! 1. loads the effective [`AgentsConfig`];
 //! 2. resolves the task → its [`TaskConfig`] → its enabled [`AgentSpec`]
 //!    (`not_found` when either is missing — see the contract);
-//! 3. checks the agent is installed via the cached `agent.list` scan
-//!    (`auth_required` when its binary is missing);
+//! 3. checks the agent is installed via the cached `agent.list` scan, re-probing
+//!    that one agent when the cache reports it missing (it may have been
+//!    installed since the scan) before failing with `auth_required`;
 //! 4. injects the task's skill (if any), builds one prompt and runs the agent
 //!    (a non-zero exit / timeout → [`ApiError::agent_error`] with `data.stderr`).
 //!
@@ -15,12 +16,11 @@
 //! string and registers its name in the dispatch table in [`crate::rpc`]. A new
 //! *task* only needs a `[tasks.<name>]` table in `server/agents.toml` (no code).
 
-use std::path::Path;
-
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::agents;
+use crate::agents::safe_join_repo_file;
 use crate::error::ApiError;
 use crate::git::reject_option;
 use crate::github::GhOptions;
@@ -335,17 +335,26 @@ pub(crate) async fn run_task(
         })?;
 
     let detected = ensure_scanned(state, &config).await?;
-    let available = detected
+
+    if detected
         .iter()
         .find(|agent| agent.name == spec.name)
-        .map(|agent| agent.available)
-        .unwrap_or(false);
+        .is_none_or(|agent| !agent.available)
+    {
+        // The cached scan says the agent isn't installed — but the cache is only
+        // cleared by `agent.config.set`, so installing the CLI since the first
+        // scan would otherwise keep failing with `auth_required`. Probe just
+        // this agent again and refresh the cache entry when it now resolves.
+        let fresh = state.agent.detect(spec).await;
 
-    if !available {
-        return Err(ApiError::auth_required(format!(
-            "the agent '{}' configured for task '{}' is not installed on PATH",
-            spec.name, task
-        )));
+        if !fresh.available {
+            return Err(ApiError::auth_required(format!(
+                "the agent '{}' configured for task '{}' is not installed on PATH",
+                spec.name, task
+            )));
+        }
+
+        refresh_cached_agent(state, fresh);
     }
 
     // Skill injection is best-effort: a missing skill degrades to the prompt
@@ -366,11 +375,26 @@ pub(crate) async fn run_task(
     Ok((output.stdout.trim().to_string(), spec.name.clone()))
 }
 
+/// Replaces one entry of the agent-detection cache in place (see [`run_task`],
+/// which re-probes a stale "not installed" entry before giving up).
+fn refresh_cached_agent(state: &AppState, fresh: DetectedAgent) {
+    let mut cache = state.lock_agent_cache();
+
+    if let Some(agents) = cache.as_mut() {
+        match agents.iter_mut().find(|agent| agent.name == fresh.name) {
+            Some(entry) => *entry = fresh,
+            None => agents.push(fresh),
+        }
+    }
+}
+
 /// Reads a working-tree file into a (lossy) UTF-8 string for use as context.
 async fn read_working_file(repo_path: &str, file: &str) -> Result<String, ApiError> {
     require_nonempty("file", file)?;
 
-    let full = Path::new(repo_path).join(file);
+    // `file` is client input: resolve it through the guard so an absolute path
+    // or a `..` component can never read outside the repository.
+    let full = safe_join_repo_file(repo_path, file)?;
     let display = full.display().to_string();
 
     let result = tokio::task::spawn_blocking(move || std::fs::read(&full))

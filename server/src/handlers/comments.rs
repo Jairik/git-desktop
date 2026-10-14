@@ -8,8 +8,6 @@
 //! window of the referenced file to the shared `comment` agent task (see
 //! [`crate::handlers::agents`]) and records the agent's reply.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::agents::safe_join_repo_file;
 use crate::error::ApiError;
 use crate::handlers::agents::{run_task, TASK_COMMENT};
 use crate::models::{Comment, CommentSide, CommentStatus};
@@ -136,17 +135,26 @@ pub async fn comment_delete(state: &AppState, params: Value) -> Result<Value, Ap
 pub async fn comment_send(state: &AppState, params: Value) -> Result<Value, ApiError> {
     let params: CommentIdParams = params_of(params)?;
 
+    // Snapshot the comment before the (possibly multi-minute) agent run: the
+    // store is re-read afterwards, so a comment created or deleted meanwhile is
+    // not clobbered by a stale copy of the whole list.
+    let comment = load_comments(&state.data_dir, &params.path)?
+        .into_iter()
+        .find(|comment| comment.id == params.id)
+        .ok_or_else(|| ApiError::not_found(format!("comment not found: {}", params.id)))?;
+
+    let context =
+        build_comment_context(&params.path, &comment.file, comment.line, &comment.body).await?;
+
+    let (reply, agent) = run_task(state, TASK_COMMENT, &context).await?;
+
+    // Re-read the store and touch only this comment; if it was deleted while the
+    // agent ran there is nothing left to fill in.
     let mut comments = load_comments(&state.data_dir, &params.path)?;
     let index = comments
         .iter()
         .position(|comment| comment.id == params.id)
         .ok_or_else(|| ApiError::not_found(format!("comment not found: {}", params.id)))?;
-
-    let comment = comments[index].clone();
-    let context =
-        build_comment_context(&params.path, &comment.file, comment.line, &comment.body).await?;
-
-    let (reply, agent) = run_task(state, TASK_COMMENT, &context).await?;
 
     comments[index].reply = Some(reply);
     comments[index].agent = Some(agent);
@@ -167,7 +175,9 @@ async fn build_comment_context(
     line: Option<u32>,
     body: &str,
 ) -> Result<String, ApiError> {
-    let full = Path::new(repo_path).join(file);
+    // `file` is client input, so it goes through the repository guard: a path
+    // that escapes the repo is an error, never a read.
+    let full = safe_join_repo_file(repo_path, file)?;
 
     // A file that cannot be read (deleted, non-UTF-8, …) is not fatal: the agent
     // can still answer from the comment body alone.
@@ -232,10 +242,6 @@ fn comments_path(data_dir: &Path, path: &str) -> PathBuf {
 fn repo_comment_key(path: &str) -> String {
     let id = store::repository_id(path);
 
-    let mut hasher = DefaultHasher::new();
-    id.hash(&mut hasher);
-    let hash = hasher.finish();
-
     let sanitized: String = id
         .chars()
         .map(|c| {
@@ -256,33 +262,98 @@ fn repo_comment_key(path: &str) -> String {
         sanitized
     };
 
-    format!("{tail}-{hash:016x}")
+    format!("{tail}-{:016x}", fnv1a64(id.as_bytes()))
+}
+
+/// FNV-1a 64-bit over `bytes`.
+///
+/// The standard library's `DefaultHasher` is explicitly *not* stable across Rust
+/// releases, so rebuilding the daemon would rename every comments file (and so
+/// "lose" every comment). FNV-1a is a fixed algorithm, so the key survives both
+/// rebuilds and upgrades.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut hash = OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+
+    hash
 }
 
 /// Reads a repository's comments, returning an empty list when none are stored.
+///
+/// An unparsable file is *not* fatal: it is quarantined (best effort) and an
+/// empty list returned, so a corrupt store degrades to "no comments" instead of
+/// bricking every comment operation for that repository.
 fn load_comments(data_dir: &Path, path: &str) -> Result<Vec<Comment>, ApiError> {
     let file = comments_path(data_dir, path);
 
     match std::fs::read_to_string(&file) {
-        Ok(text) => serde_json::from_str(&text).map_err(|error| {
-            ApiError::internal(format!(
-                "failed to parse comments file {}: {error}",
-                file.display()
-            ))
-        }),
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(comments) => Ok(comments),
+            Err(error) => {
+                crate::log::warn("Failed to parse comments file; quarantining it")
+                    .field("path", file.display().to_string())
+                    .field("error", error.to_string());
+                quarantine_corrupt_file(&file);
+
+                Ok(Vec::new())
+            }
+        },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(ApiError::from(error)),
     }
 }
 
+/// Renames an unparsable comments file aside so it can still be inspected,
+/// keeping the original name recognizable. Best effort: a failed rename leaves
+/// the file in place, and the caller already recovers with an empty list.
+fn quarantine_corrupt_file(file: &Path) {
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+
+    let mut quarantined = file.to_path_buf().into_os_string();
+    quarantined.push(format!(".corrupt-{unix}"));
+
+    if let Err(error) = std::fs::rename(file, PathBuf::from(quarantined)) {
+        crate::log::warn("Failed to quarantine corrupt comments file")
+            .field("path", file.display().to_string())
+            .field("error", error.to_string());
+    }
+}
+
 /// Writes a repository's comments back to disk (pretty-printed JSON).
+///
+/// The write goes to a sibling temp file that is then renamed over the target:
+/// `rename` is atomic within a directory, so a crash (or a concurrent write) can
+/// never leave a half-written store behind for [`load_comments`] to trip over.
 fn save_comments(data_dir: &Path, path: &str, comments: &[Comment]) -> Result<(), ApiError> {
     let dir = data_dir.join(COMMENTS_DIR);
     std::fs::create_dir_all(&dir)?;
 
     let file = comments_path(data_dir, path);
     let text = serde_json::to_string_pretty(comments)?;
-    std::fs::write(&file, text)?;
+
+    // A sibling temp file (`<file>.tmp`) renamed over the target.
+    let mut temp = file.clone().into_os_string();
+    temp.push(".tmp");
+    let temp = PathBuf::from(temp);
+
+    std::fs::write(&temp, text).inspect_err(|_| {
+        // Never leave a stray temp file behind on a failed write.
+        let _ = std::fs::remove_file(&temp);
+    })?;
+
+    if let Err(error) = std::fs::rename(&temp, &file) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(ApiError::from(error));
+    }
 
     Ok(())
 }
