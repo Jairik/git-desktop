@@ -4,9 +4,12 @@ This is the **single source of truth** for how the Rust backend (`server/`) and 
 React client (`client/`) talk. Both sides MUST match this document exactly. If you
 change it, change it here first, then update both sides.
 
-The product is a **minimal local Git client**. It is deliberately free of
-GitHub-specific concerns (no GitHub API/auth/PRs/copilot). The git engine stays a
-git engine — the server shells out to the `git` CLI behind a clean abstraction.
+The product is a **minimal local Git client**. The git engine stays a git engine —
+the server shells out to the `git` CLI behind a clean abstraction. GitHub is
+optional and thin (surfaced over the `gh` CLI), and optional local AI agents (the
+`opencode` / `claude` / `codex` / `cursor-agent` CLIs, etc.) can be wired in for
+commit messages, file summaries and reviews. None of that changes the local-first
+engine.
 
 ---
 
@@ -26,13 +29,21 @@ git engine — the server shells out to the `git` CLI behind a clean abstraction
 - **Port:** default `4789`; override with env `GITDAEMON_PORT`. The server writes a
   discovery file `~/.gitdaemon/server.json` = `{ "url": "http://127.0.0.1:<port>" }`
   on start (best-effort; client may just default to `http://127.0.0.1:4789`).
+- **Serving the SPA:** if env `GITDAEMON_SERVE_DIR` points at a built client dir
+  (e.g. `client/dist`), the daemon also serves it as a single-page app at `/`
+  (unknown paths -> `index.html`). Unset => API-only (dev/test), and the Vite dev
+  server connects via `?server=` as usual. This powers the web client (open the
+  daemon URL in a browser) and the Electron shell (`desktop/` points a
+  BrowserWindow at the same URL).
 - **Errors** use these `code` values: `bad_request` (malformed/unknown method),
   `not_found` (repo/ref missing), `git_error` (git command failed; `data.stderr`
   carries git's stderr, `data.args` carries the argv), `io_error`, `conflict`,
   and `internal_error` (unexpected server-side failure/panic). GitHub methods add
   `auth_required` (the `gh` CLI is missing/unauthenticated, or the repo has no
   GitHub remote) and `gh_error` (the `gh` CLI itself failed; `data.stderr` carries
-  gh's stderr).
+  gh's stderr). Agent methods add `agent_error` (the configured agent CLI failed;
+  `data.stderr` carries its output), reuse `auth_required` when the task's agent
+  binary isn't installed, and `not_found` when no agent is configured for the task.
 
 All paths sent by the client are **absolute server-side paths**. The server treats
 them as trusted (local single-user daemon).
@@ -133,6 +144,21 @@ PullRequestDetail = PullRequest & { body: string, comments: number, reviewDecisi
 Check             = { name: string, status: "queued"|"in_progress"|"completed", conclusion: string | null,
                       detailsUrl: string | null, startedAt: string | null, completedAt: string | null, kind: "check_run"|"status" }
 CiStatus          = { headSha: string | null, rollUp: "success"|"pending"|"failure", checks: Check[] }
+DetectedAgent      = { name: string, command: string, path: string | null,
+                       available: boolean, version: string | null }
+AgentSpec          = { name: string, command: string, detect: string[], argv: string[],
+                       enabled: boolean, env?: { [k: string]: string } }
+TaskConfig         = { agent: string, skill: string | null, prompt: string }
+AgentsConfig       = { defaultAgent: string, agents: AgentSpec[],
+                       tasks: { [task: string]: TaskConfig }  # known: commit_message, summarize_file, review, comment
+                       , configPath: string }
+ReviewTarget       = { kind: "file", file: string, ref?: string }
+                    | { kind: "commit", sha: string }
+                    | { kind: "pr", number: number }
+AgentReview        = { agent: string, target: ReviewTarget, summary: string | null, output: string }
+Comment            = { id: string, file: string, line: number | null, side: "old" | "new" | null,
+                       body: string, status: "open" | "sent", reply: string | null,
+                       agent: string | null, createdAt: string /*ISO-8601*/ }
 ```
 
 ---
@@ -224,6 +250,30 @@ they return `auth_required`; other gh failures return `gh_error` (with `data.std
 - `pr.checkout` `{ path, number }` → `{ branch: string }`  (`gh pr checkout <n>`; returns the local branch now checked out)
 - `ci.status` `{ path, ref? }` → `CiStatus`  (combined check-runs + commit statuses for `ref`, default = current branch; `rollUp` folds conclusions)
 
+### Local agents, reviews & comments
+These methods run the machine's installed AI CLIs (`opencode`, `claude`, `codex`,
+`cursor-agent`, ...). The daemon shells out — nothing is bundled or downloaded.
+`agent.list` scans `PATH` for the configured + well-known agent binaries; the
+config decides which agent + skill/prompt each task uses (see `server/agents.toml`
+for documented defaults — `commit_message` ships wired to the
+`generate-commit-message` skill). The task's context (diff / file / commit) is
+embedded in the prompt and passed as a single argv argument (never a shell string),
+so no tool or file-read permission prompts are needed; oversized context is
+truncated to a byte budget. Agent output is free-form text rendered as-is.
+
+- `agent.list` → `{ agents: DetectedAgent[] }`  (scan `PATH`; cached until `agent.config.set`)
+- `agent.config.get` → `AgentsConfig`  (effective config + the path `agent.config.set` writes to)
+- `agent.config.set` `{ config: AgentsConfig }` → `{}`  (persist under the data dir; clears the scan cache)
+- `agent.commit_message` `{ path, staged? = true }` → `{ message: string, agent: string }`  (runs `commit_message` on staged [default] or working-tree changes)
+- `agent.summarize_file` `{ path, file, ref? }` → `{ summary: string, agent: string }`  (runs `summarize_file`)
+- `agent.review` `{ path, target: ReviewTarget }` → `AgentReview`  (runs `review` on a file / commit / PR)
+
+Comments are stored per-repo in the daemon data dir.
+- `comment.create` `{ path, file, line?, side?, body }` → `Comment`
+- `comment.list` `{ path, file? }` → `Comment[]`
+- `comment.delete` `{ path, id }` → `{}`
+- `comment.send` `{ path, id }` → `Comment`  (runs the `comment` task using the comment as the ask; fills `reply` + `agent`, sets `status` to `sent`)
+
 ---
 
 ## Client behavior
@@ -234,3 +284,6 @@ they return `auth_required`; other gh failures return `gh_error` (with `data.std
 - Subscribe to `GET /ws` to render progress bars for clone/fetch/push/pull.
 - On any git operation that mutates a repo, the client re-issues `status.get`,
   `log.list`, `branch.list` to refresh (simple polling-after-mutation; no state sync needed in v1).
+- Agent operations (`agent.*`, `comment.send`) can be slow (they run an LLM CLI):
+  the client must show an explicit busy/disabled state; their results are free-form
+  text/JSON rendered as-is rather than validated.
