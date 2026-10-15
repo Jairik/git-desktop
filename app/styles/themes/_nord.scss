@@ -1,0 +1,41 @@
+// Nord theme
+//
+// Palette source: https://www.nordtheme.com/docs/colors-and-palettes
+//   nord0 #2e3440  nord1 #3b4252  nord2 #434c5e  nord3 #4c566a
+//   nord4 #d8dee9  nord6 #eceff4
+//   nord7 #8fbcbb  nord8 #88c0d0  nord9 #81a1c1
+//   nord11 #bf616a nord12 #d08770 nord13 #ebcb8b nord14 #a3be8c nord15 #b48ead
+
+$nord-background: #2e3440;
+$nord-foreground: #eceff4;
+$nord-secondary: #d8dee9;
+$nord-muted: #4c566a;
+$nord-black: #242933;
+$nord-secondary-button: #3b4252;
+$nord-accent: #81a1c1;
+$nord-accent-bright: #88c0d0;
+$nord-green: #a3be8c;
+$nord-red: #bf616a;
+$nord-yellow: #ebcb8b;
+$nord-orange: #d08770;
+$nord-magenta: #b48ead;
+$nord-cyan: #8fbcbb;
+
+body.theme-nord {
+  @include custom-theme(
+    $background: $nord-background,
+    $foreground: $nord-foreground,
+    $secondary: $nord-secondary,
+    $muted: $nord-muted,
+    $accent: $nord-accent,
+    $accent-bright: $nord-accent-bright,
+    $green: $nord-green,
+    $red: $nord-red,
+    $yellow: $nord-yellow,
+    $magenta: $nord-magenta,
+    $cyan: $nord-cyan,
+    $black: $nord-black,
+    $secondary-button-background: $nord-secondary-button,
+    $conflicted: $nord-orange
+  );
+}

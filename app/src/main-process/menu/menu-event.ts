@@ -43,6 +43,8 @@ export type MenuEvent =
   | 'show-stashed-changes'
   | 'hide-stashed-changes'
   | 'find-text'
+  | 'generate-commit-message'
+  | 'toggle-agent-chat'
   | 'create-issue-in-repository-on-github'
   | 'preview-pull-request'
   | 'test-app-error'

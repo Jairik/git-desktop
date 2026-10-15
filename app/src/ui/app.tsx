@@ -90,6 +90,9 @@ import { SignIn } from './sign-in'
 import { InstallGit } from './install-git'
 import { EditorError } from './editor'
 import { CopilotAppNotFoundDialog } from './copilot-app/copilot-app-not-found-dialog'
+import { AgentChatDialog } from './agent-chat/agent-chat-dialog'
+import { getSelectedLocalAgent } from '../lib/local-agent'
+import { DiffSelectionType } from '../models/diff'
 import { About } from './about'
 import { Publish } from './publish-repository'
 import { Acknowledgements } from './acknowledgements'
@@ -531,6 +534,10 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.showAbout()
       case 'go-to-commit-message':
         return this.goToCommitMessage()
+      case 'generate-commit-message':
+        return this.generateCommitMessageWithLocalAgent()
+      case 'toggle-agent-chat':
+        return this.toggleAgentChat()
       case 'open-pull-request':
         return this.openPullRequest()
       case 'preview-pull-request':
@@ -654,6 +661,54 @@ export class App extends React.Component<IAppProps, IAppState> {
   private async goToCommitMessage() {
     await this.showChanges(false)
     this.props.dispatcher.setCommitMessageFocus(true)
+  }
+
+  /**
+   * Generate a commit message for the files selected in the changes list using
+   * the configured local CLI agent, filling in the summary and description.
+   */
+  private async generateCommitMessageWithLocalAgent() {
+    const selectedState = this.state.selectedState
+    if (
+      selectedState == null ||
+      selectedState.type !== SelectionType.Repository
+    ) {
+      return
+    }
+
+    const { repository, state } = selectedState
+    const files = state.changesState.workingDirectory.files
+    const checked = files.filter(
+      f => f.selection.getSelectionType() !== DiffSelectionType.None
+    )
+
+    // Use the checked files, falling back to everything when the user hasn't
+    // checked anything, so the shortcut is always useful.
+    const filesSelected = checked.length > 0 ? checked : files
+
+    // Bring the changes view up first so the message bars are visible while
+    // the agent writes into them.
+    await this.showChanges(false)
+
+    this.props.dispatcher.generateCommitMessageWithLocalAgent(
+      repository,
+      filesSelected,
+      getSelectedLocalAgent()
+    )
+  }
+
+  /** Open the agent chat, or close it if it's already open. */
+  private toggleAgentChat() {
+    if (this.state.allPopups.some(p => p.type === PopupType.AgentChat)) {
+      this.props.dispatcher.closePopup(PopupType.AgentChat)
+      return
+    }
+
+    const repository = this.getRepository()
+    this.props.dispatcher.showPopup({
+      type: PopupType.AgentChat,
+      repository: repository instanceof Repository ? repository : null,
+    })
   }
 
   private checkForUpdates(
@@ -3034,6 +3089,14 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.AgentChat:
+        return (
+          <AgentChatDialog
+            key="agent-chat"
+            repository={popup.repository}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
       default:
         return assertNever(popup, `Unknown popup type: ${popup}`)
     }

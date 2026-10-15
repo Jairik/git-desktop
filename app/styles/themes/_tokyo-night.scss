@@ -1,0 +1,41 @@
+// Tokyo Night theme
+//
+// Palette source: https://github.com/folke/tokyonight.nvim
+//   bg #1a1b26  bg_dark #16161e  bg_highlight #292e42
+//   fg #c0caf5  fg_dark #a9b1d6  comment #565f89
+//   blue #7aa2f7  cyan #7dcfff  green #9ece6a  magenta #bb9af7
+//   orange #ff9e64  red #f7768e  yellow #e0af68
+
+$tokyo-night-background: #1a1b26;
+$tokyo-night-foreground: #c0caf5;
+$tokyo-night-secondary: #a9b1d6;
+$tokyo-night-muted: #565f89;
+$tokyo-night-black: #16161e;
+$tokyo-night-secondary-button: #292e42;
+$tokyo-night-accent: #7aa2f7;
+$tokyo-night-accent-bright: #7dcfff;
+$tokyo-night-green: #9ece6a;
+$tokyo-night-red: #f7768e;
+$tokyo-night-yellow: #e0af68;
+$tokyo-night-orange: #ff9e64;
+$tokyo-night-magenta: #bb9af7;
+$tokyo-night-cyan: #7dcfff;
+
+body.theme-tokyo-night {
+  @include custom-theme(
+    $background: $tokyo-night-background,
+    $foreground: $tokyo-night-foreground,
+    $secondary: $tokyo-night-secondary,
+    $muted: $tokyo-night-muted,
+    $accent: $tokyo-night-accent,
+    $accent-bright: $tokyo-night-accent-bright,
+    $green: $tokyo-night-green,
+    $red: $tokyo-night-red,
+    $yellow: $tokyo-night-yellow,
+    $magenta: $tokyo-night-magenta,
+    $cyan: $tokyo-night-cyan,
+    $black: $tokyo-night-black,
+    $secondary-button-background: $tokyo-night-secondary-button,
+    $conflicted: $tokyo-night-orange
+  );
+}

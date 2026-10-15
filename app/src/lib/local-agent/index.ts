@@ -2,7 +2,13 @@ import { getStringArray, setStringArray } from '../local-storage'
 import { agyAgent } from './agy'
 import { opencodeAgent } from './opencode'
 import { Disposable, Emitter } from 'event-kit'
-import { ILocalAgent, ILocalAgentCommitMessage, prepareDiff } from './shared'
+import {
+  ILocalAgent,
+  ILocalAgentChatReply,
+  ILocalAgentCommitMessage,
+  LocalAgentProgressCallback,
+  prepareDiff,
+} from './shared'
 
 export * from './shared'
 
@@ -139,4 +145,31 @@ export async function generateCommitMessageWithLocalAgent(
   } finally {
     emit(null)
   }
+}
+
+/**
+ * Send a chat message with the selected agent and model. `session` continues an
+ * earlier conversation; the reply carries the id to pass on the next turn.
+ */
+export function sendLocalAgentChat(
+  selection: ILocalAgentSelection,
+  prompt: string,
+  session: string | null,
+  cwd: string,
+  signal: AbortSignal,
+  onProgress: LocalAgentProgressCallback
+): Promise<ILocalAgentChatReply> {
+  const agent = getLocalAgent(selection.agent)
+  if (agent === undefined) {
+    return Promise.reject(new Error(`Unknown local agent '${selection.agent}'`))
+  }
+
+  return agent.chat({
+    prompt,
+    model: selection.model,
+    cwd,
+    signal,
+    session,
+    onProgress,
+  })
 }

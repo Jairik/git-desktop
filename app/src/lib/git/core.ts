@@ -330,6 +330,18 @@ export async function git(
             if (gitError === null) {
               gitError = parseError(coerceToString(result.stdout))
             }
+            // Dugite's NotAGitRepository pattern only matches Git's message
+            // when it searches up through parent directories. When Git stops at
+            // a filesystem boundary (for example when the path is on a separate
+            // mount) it words the message differently and parsing yields null.
+            // Recognize it ourselves so callers relying on `expectedErrors`
+            // (getRemotes, getBranches, …) still get the parsed error.
+            if (
+              gitError === null &&
+              looksLikeNotAGitRepository(result.stderr)
+            ) {
+              gitError = DugiteError.NotAGitRepository
+            }
           }
 
           const gitErrorDescription =
@@ -384,6 +396,17 @@ export async function git(
     path,
     options
   )
+}
+
+/**
+ * Whether stderr describes running a Git command outside of any repository.
+ *
+ * Git varies the wording depending on whether it stopped searching at a parent
+ * directory or at a filesystem boundary, and only the former is recognized by
+ * dugite's own error parser.
+ */
+function looksLikeNotAGitRepository(stderr: Buffer | string): boolean {
+  return /not a git repository/i.test(coerceToString(stderr))
 }
 
 /**

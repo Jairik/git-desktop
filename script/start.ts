@@ -31,7 +31,20 @@ function startApp() {
     process.exit(1)
   }
 
+  const launchedAt = Date.now()
+
   runningApp.on('close', () => {
+    // A window takes a beat to open. If the process is gone almost immediately
+    // it's usually because another instance already holds the single-instance
+    // lock (for example one started from the desktop launcher), not because the
+    // build failed. That otherwise looks like the app "crashed" on launch.
+    if (Date.now() - launchedAt < 5000) {
+      console.log(
+        'The app exited immediately. Another Git Desktop instance is probably ' +
+          'already running; close it and start again to launch this build.'
+      )
+    }
+
     process.exit(0)
   })
 }

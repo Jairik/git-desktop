@@ -124,6 +124,7 @@ export enum PopupType {
   ConfirmDeleteCopilotBYOKProvider = 'ConfirmDeleteCopilotBYOKProvider',
   CopilotConflictResolutionAlwaysNudge = 'CopilotConflictResolutionAlwaysNudge',
   DeleteWorktreeFailed = 'DeleteWorktreeFailed',
+  AgentChat = 'AgentChat',
 }
 
 interface IBasePopup {
@@ -557,5 +558,10 @@ export type PopupDetail =
       error: Error
       originalWorktree: WorktreeEntry | null
       options: IDeleteWorktreeOptions
+    }
+  | {
+      type: PopupType.AgentChat
+      /** The repository to chat about, or null when none is selected. */
+      repository: Repository | null
     }
 export type Popup = IBasePopup & PopupDetail

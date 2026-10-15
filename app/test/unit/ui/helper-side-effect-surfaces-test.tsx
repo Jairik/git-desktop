@@ -3,7 +3,10 @@ import { afterEach, describe, it, mock } from 'node:test'
 import * as React from 'react'
 
 import { AppTheme } from '../../../src/ui/app-theme'
-import { ApplicationTheme } from '../../../src/ui/lib/application-theme'
+import {
+  ApplicationTheme,
+  selectableThemes,
+} from '../../../src/ui/lib/application-theme'
 import { fireEvent, render } from '../../helpers/ui/render'
 
 type TUnlinkBehavior = (path: string) => Promise<void>
@@ -62,6 +65,40 @@ describe('helper side-effect surfaces', () => {
       view.unmount()
 
       assert.equal(document.body.classList.contains('theme-light'), false)
+    } finally {
+      electron.ipcRenderer.send = previousSend
+    }
+  })
+
+  it('applies the palette themes as dark themes', async () => {
+    const electron = await import('electron')
+    const previousSend = electron.ipcRenderer.send
+
+    electron.ipcRenderer.send = () => {}
+
+    // Every palette theme (everything except the built-in Light/Dark).
+    const paletteThemes = selectableThemes.filter(
+      theme =>
+        theme !== ApplicationTheme.Light && theme !== ApplicationTheme.Dark
+    )
+    assert.ok(paletteThemes.length > 0)
+
+    try {
+      for (const theme of paletteThemes) {
+        const view = render(<AppTheme theme={theme} />)
+
+        assert.ok(
+          document.body.classList.contains(`theme-${theme}`),
+          `expected theme-${theme} to be applied`
+        )
+        // Palette themes are applied directly, not resolved to `theme-dark`.
+        assert.equal(document.body.classList.contains('theme-dark'), false)
+        assert.equal(document.documentElement.style.colorScheme, 'dark')
+
+        view.unmount()
+
+        assert.equal(document.body.classList.contains(`theme-${theme}`), false)
+      }
     } finally {
       electron.ipcRenderer.send = previousSend
     }

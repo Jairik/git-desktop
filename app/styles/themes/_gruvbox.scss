@@ -1,0 +1,40 @@
+// Gruvbox Dark theme
+//
+// Palette source: https://github.com/morhetz/gruvbox
+//   bg0 #282828  bg1 #3c3836  fg #ebdbb2  fg4 #d5c4a1  gray #928374
+//   red #fb4934  green #b8bb26  yellow #fabd2f  blue #83a598
+//   purple #d3869b  aqua #8ec07c  orange #fe8019
+
+$gruvbox-background: #282828;
+$gruvbox-foreground: #ebdbb2;
+$gruvbox-secondary: #d5c4a1;
+$gruvbox-muted: #928374;
+$gruvbox-black: #1d2021;
+$gruvbox-secondary-button: #3c3836;
+$gruvbox-accent: #83a598;
+$gruvbox-accent-bright: #8ec07c;
+$gruvbox-green: #b8bb26;
+$gruvbox-red: #fb4934;
+$gruvbox-yellow: #fabd2f;
+$gruvbox-orange: #fe8019;
+$gruvbox-magenta: #d3869b;
+$gruvbox-cyan: #8ec07c;
+
+body.theme-gruvbox {
+  @include custom-theme(
+    $background: $gruvbox-background,
+    $foreground: $gruvbox-foreground,
+    $secondary: $gruvbox-secondary,
+    $muted: $gruvbox-muted,
+    $accent: $gruvbox-accent,
+    $accent-bright: $gruvbox-accent-bright,
+    $green: $gruvbox-green,
+    $red: $gruvbox-red,
+    $yellow: $gruvbox-yellow,
+    $magenta: $gruvbox-magenta,
+    $cyan: $gruvbox-cyan,
+    $black: $gruvbox-black,
+    $secondary-button-background: $gruvbox-secondary-button,
+    $conflicted: $gruvbox-orange
+  );
+}

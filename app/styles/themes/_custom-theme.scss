@@ -1,0 +1,317 @@
+// Shared shape for palette-based custom themes.
+//
+// Every custom theme starts from the structural dark theme so that all
+// variables the app reads are defined, then overrides the parts of the palette
+// that give it its identity. A theme only supplies a handful of terminal-style
+// colors and this mixin derives the rest (hover shades, mixes against the
+// background, syntax colors, …) so each theme file stays readable.
+//
+// Add a theme by appending its name to `$dark-theme-names` below, creating a
+// palette file that calls this mixin, and registering it in
+// `app/src/ui/lib/application-theme.ts`.
+@mixin custom-theme(
+  $background,
+  $foreground,
+  $secondary,
+  $muted,
+  $accent,
+  $accent-bright,
+  $green,
+  $red,
+  $yellow,
+  $magenta,
+  $cyan,
+  $black: darken($background, 4%),
+  $bright-red: $red,
+  $bright-white: $secondary,
+  $secondary-button-background: lighten($background, 5%),
+  $conflicted: $yellow
+) {
+  // Start from the dark theme so every variable is defined.
+  @include dark-theme-variables;
+
+  // Base
+  --color-new: #{$green};
+  --color-deleted: #{$red};
+  --color-modified: #{$yellow};
+  --color-renamed: #{$accent};
+  --color-conflicted: #{$conflicted};
+
+  --text-color: #{$foreground};
+  --text-secondary-color: #{$secondary};
+  --text-secondary-color-muted: #{mix($secondary, $background, 55%)};
+  --background-color: #{$background};
+
+  // Buttons
+  --button-background: #{$accent};
+  --button-hover-background: #{lighten($accent, 5%)};
+  --button-text-color: #{$black};
+  --button-focus-border-color: #{$accent-bright};
+
+  // Links
+  --link-button-color: #{$accent-bright};
+  --link-button-hover-color: #{lighten($accent-bright, 5%)};
+  --link-button-selected-hover-color: #{$accent-bright};
+
+  // Secondary buttons
+  --secondary-button-background: #{$secondary-button-background};
+  --secondary-button-hover-background: var(--secondary-button-background);
+  --secondary-button-text-color: var(--text-color);
+  --secondary-button-focus-shadow-color: #{rgba($accent, 0.35)};
+  --secondary-button-focus-border-color: #{$muted};
+
+  --badge-icon-color: #{$secondary};
+
+  // Colors used for icons that are inside an input box
+  --input-icon-warning-color: #{$yellow};
+  --input-icon-error-color: #{$red};
+  --input-icon-hover-background-color: #{lighten($background, 8%)};
+
+  // Box
+  --box-background-color: #{darken($background, 3%)};
+  --box-alt-background-color: #{lighten($background, 4%)};
+  --box-skeleton-background-color: #{lighten($background, 12%)};
+  --skeleton-background-gradient: -webkit-linear-gradient(left, #{rgba($background, 0)} 0%, #{rgba($background, 0.5)} 50%, #{rgba($background, 0)} 100%);
+
+  --box-border-color: #{darken($background, 8%)};
+  --box-border-contrast-color: #{$muted};
+  --box-border-accent-color: #{$accent};
+
+  --box-selected-background-color: #{lighten($background, 14%)};
+  --box-hover-text-color: var(--text-color);
+  --box-hover-background-color: #{lighten($background, 8%)};
+  --box-selected-text-color: var(--text-color);
+  --box-selected-border-color: #{$secondary};
+  --box-selected-active-background-color: #{$accent};
+  --box-selected-active-text-color: #{$black};
+  --box-selected-active-border-color: #{$secondary};
+
+  --box-overflow-shadow-background: #{linear-gradient(180deg, rgba($background, 0) 0%, rgba($background, 1) 90%, rgba($background, 1) 100%)};
+  --no-shadow-top: #{linear-gradient($background, rgba(255, 255, 255, 0))};
+  --no-shadow-bottom: #{linear-gradient(rgba(255, 255, 255, 0), $background)};
+  --top-shadow: #{linear-gradient(0deg, rgba($background, 0) 0%, rgba(black, 0.6) 90%, rgba(black, 1) 100%)};
+  --bottom-shadow: #{linear-gradient(180deg, rgba($background, 0) 0%, rgba(black, 0.6) 90%, rgba(black, 1) 100%) 0 100%};
+  --box-overflow-shadow-background-two: #{var(--no-shadow-top), var(--no-shadow-bottom) 0 100%, var(--top-shadow), var(--bottom-shadow)};
+
+  --box-placeholder-color: #{$muted};
+
+  // Author input (co-authors)
+  --co-author-tag-background-color: #{darken($accent, 32%)};
+  --co-author-tag-border-color: #{darken($accent, 22%)};
+
+  // Commit warning badge icon
+  --commit-warning-badge-background-color: #{$background};
+  --commit-warning-badge-border-color: #{lighten($background, 10%)};
+
+  --shadow-color: #{rgba(black, 0.5)};
+  --base-box-shadow: 0 2px 7px var(--shadow-color);
+
+  // Toolbar
+  --toolbar-background-color: #{darken($background, 3%)};
+  --toolbar-border-color: var(--box-border-color);
+  --toolbar-text-color: var(--text-color);
+  --toolbar-text-secondary-color: var(--text-secondary-color);
+
+  --toolbar-button-hover-color: #{$foreground};
+  --toolbar-button-hover-background-color: #{lighten($background, 8%)};
+  --toolbar-button-focus-background-color: #{lighten($background, 8%)};
+  --toolbar-button-active-color: var(--text-color);
+  --toolbar-button-active-background-color: var(--background-color);
+  --toolbar-button-active-border-color: var(--background-color);
+
+  --toolbar-button-progress-color: #{lighten($background, 8%)};
+  --toolbar-button-focus-progress-color: #{lighten($background, 12%)};
+  --toolbar-button-hover-progress-color: #{lighten($background, 12%)};
+  --toolbar-dropdown-open-progress-color: #{$secondary};
+  --toolbar-dropdown-text-warning-color: #{$yellow};
+  --toolbar-dropdown-text-hover-color: #{$foreground};
+
+  --toolbar-tooltip-background-color: #{lighten($background, 8%)};
+  --toolbar-tooltip-shadow-color: black;
+
+  // App menu bar colors (Windows/Linux only)
+  --app-menu-button-active-background-color: #{lighten($background, 8%)};
+  --app-menu-pane-background-color: #{lighten($background, 8%)};
+  --app-menu-divider-color: #{$muted};
+
+  --toolbar-badge-background-color: #{lighten($background, 14%)};
+  --toolbar-badge-active-background-color: #{lighten($background, 14%)};
+
+  // Tab bar
+  --tab-bar-active-color: #{$accent};
+  --tab-bar-background-color: var(--box-background-color);
+  --tab-bar-hover-background-color: #{lighten($background, 8%)};
+  --tab-bar-count-color: var(--text-color);
+  --tab-bar-count-background-color: #{lighten($background, 14%)};
+
+  // List item badges
+  --list-item-badge-color: var(--text-color);
+  --list-item-badge-background-color: #{$muted};
+  --list-item-selected-badge-color: #{$background};
+  --list-item-selected-badge-background-color: #{$secondary};
+  --list-item-selected-active-badge-color: #{$background};
+  --list-item-selected-active-badge-background-color: #{$foreground};
+  --list-item-hover-background-color: #{lighten($background, 8%)};
+
+  // Toast notifications
+  --toast-notification-color: var(--text-color);
+  --toast-notification-background-color: #{rgba(black, 0.8)};
+
+  // Focus rings and accents
+  --focus-color: #{$accent};
+  --accent-color: #{$accent-bright};
+  --diff-linenumber-focus-color: #{$accent-bright};
+  --text-field-focus-shadow-color: #{rgba($accent, 0.25)};
+
+  // Blankslate actions
+  --primary-suggested-action-background: #{darken($accent, 42%)};
+  --primary-suggested-action-border-color: #{darken($accent, 22%)};
+  --suggested-action-icon-color: #{$accent-bright};
+
+  // Diff view
+  --diff-text-color: var(--text-color);
+  --diff-alt-text-color: #{$secondary};
+  --diff-border-color: #{$muted};
+  --diff-gutter-color: #{$muted};
+  --diff-gutter-background-color: #{darken($background, 3%)};
+
+  --diff-line-number-color: var(--text-secondary-color);
+
+  --diff-selected-background-color: #{darken($accent, 35%)};
+  --diff-selected-border-color: #{darken($accent, 25%)};
+  --diff-selected-gutter-color: #{darken($accent, 25%)};
+  --diff-selected-text-color: var(--text-color);
+
+  --diff-add-background-color: #{mix($green, $background, 15%)};
+  --diff-add-border-color: #{mix($green, $background, 30%)};
+  --diff-add-gutter-color: #{mix($green, $background, 30%)};
+  --diff-add-gutter-background-color: #{mix($green, $background, 24%)};
+  --diff-add-inner-background-color: #{$green};
+  --diff-add-text-color: var(--diff-text-color);
+
+  --diff-delete-background-color: #{mix($red, $background, 15%)};
+  --diff-delete-border-color: #{mix($red, $background, 30%)};
+  --diff-delete-gutter-color: #{mix($red, $background, 30%)};
+  --diff-delete-gutter-background-color: #{mix($red, $background, 24%)};
+  --diff-delete-inner-background-color: #{$red};
+  --diff-delete-text-color: #{$bright-red};
+
+  --diff-hunk-background-color: #{mix($accent, $background, 12%)};
+  --diff-hunk-border-color: #{mix($accent, $background, 30%)};
+  --diff-hunk-gutter-color: #{mix($accent, $background, 30%)};
+  --diff-hunk-gutter-background-color: #{mix($accent, $background, 22%)};
+  --diff-hunk-text-color: var(--text-secondary-color);
+
+  --diff-hover-background-color: #{mix($accent, $background, 35%)};
+  --diff-hover-border-color: #{$accent};
+  --diff-hover-gutter-color: #{$accent};
+  --diff-hover-text-color: var(--diff-text-color);
+
+  --diff-add-hover-background-color: #{mix($green, $background, 35%)};
+  --diff-add-hover-border-color: #{mix($green, $background, 55%)};
+  --diff-add-hover-gutter-color: #{mix($green, $background, 55%)};
+  --diff-add-hover-text-color: var(--text-color);
+
+  --diff-delete-hover-background-color: #{mix($red, $background, 35%)};
+  --diff-delete-hover-border-color: #{mix($red, $background, 55%)};
+  --diff-delete-hover-gutter-color: #{mix($red, $background, 55%)};
+  --diff-delete-hover-text-color: var(--text-color);
+
+  --diff-empty-row-background-color: #{darken($background, 1%)};
+  --diff-empty-row-gutter-background-color: var(--diff-gutter-background-color);
+  --diff-empty-hunk-handle: #{lighten($background, 14%)};
+
+  // Syntax highlighting text colors
+  --syntax-variable-color: #{$magenta};
+  --syntax-alt-variable-color: #{$accent-bright};
+  --syntax-keyword-color: #{$bright-red};
+  --syntax-atom-color: #{$accent-bright};
+  --syntax-string-color: #{$green};
+  --syntax-qualifier-color: #{$magenta};
+  --syntax-type-color: #{$bright-red};
+  --syntax-comment-color: #{$muted};
+  --syntax-tag-color: #{$green};
+  --syntax-attribute-color: #{$magenta};
+  --syntax-link-color: #{$accent-bright};
+  --syntax-header-color: #{$bright-red};
+  --syntax-quote-color: #{$cyan};
+
+  // Colors for form errors
+  --error-color: #{$red};
+  --form-error-background: #{mix($red, $background, 18%)};
+  --form-error-border-color: #{mix($red, $background, 35%)};
+  --form-error-text-color: var(--text-color);
+
+  --dialog-banner-success-background: #{mix($green, $background, 30%)};
+  --dialog-banner-success-border-color: #{mix($green, $background, 45%)};
+  --dialog-banner-success-text-color: var(--text-color);
+
+  --input-warning-text-color: var(--dialog-warning-color);
+  --input-error-text-color: #{$bright-red};
+
+  --overlay-background-color: rgba(0, 0, 0, 0.5);
+
+  // Dialog
+  --dialog-warning-color: #{$yellow};
+  --dialog-information-color: #{$accent-bright};
+  --dialog-error-color: #{$red};
+
+  // Banner
+  --banner-warning-background: #{mix($yellow, $background, 15%)};
+  --banner-warning-text-color: var(--text-color);
+  --banner-warning-link-color: #{$accent-bright};
+  --banner-warning-icon-color: #{$yellow};
+
+  // File warning
+  --file-warning-background-color: #{rgba($yellow, 0.15)};
+  --file-warning-color: #{$yellow};
+  --file-warning-border-color: #{rgba($yellow, 0.4)};
+
+  // Tooltips
+  --tooltip-background-color: #{lighten($background, 8%)};
+  --tooltip-color: #{$bright-white};
+  --tooltip-shadow-color: #{$black};
+
+  // Inline paths and code
+  --path-segment-background: #{mix($accent, $background, 22%)};
+  --path-segment-background-focus: #{mix($accent, $background, 32%)};
+
+  // merge/rebase status indicators
+  --status-pending-color: #{$yellow};
+  --status-error-color: #{$red};
+  --status-success-color: #{$green};
+
+  // PR status icon colors
+  --pr-open-icon-color: #{$green};
+  --pr-draft-icon-color: #{$muted};
+
+  // PR review colors
+  --pr-timeline-line-color: #{$muted};
+  --pr-changes-requested-icon-background-color: #{$red};
+  --pr-approved-icon-background-color: #{$green};
+  --pr-commented-icon-color: #{$muted};
+  --pr-commented-icon-background-color: #{lighten($background, 14%)};
+
+  --call-to-action-bubble-background-color: #{$accent};
+  --call-to-action-bubble-color: #{$black};
+
+  --title-tool-tip-background-color: #{lighten($background, 10%)};
+  --title-tool-tip-shadow: none;
+
+  // Markdown colors
+  --md-border-default-color: #{lighten($background, 14%)};
+  --md-border-muted-color: #{lighten($background, 8%)};
+  --md-canvas-default-color: #{darken($background, 3%)};
+  --md-canvas-subtle-color: #{lighten($background, 4%)};
+  --md-fg-default-color: #{$secondary};
+  --md-fg-muted-color: #{$muted};
+  --md-danger-fg-color: #{$bright-red};
+  --md-neutral-muted-color: #{rgba($muted, 0.4)};
+  --md-accent-emphasis-color: #{darken($accent, 20%)};
+  --md-accent-fg-color: #{$accent-bright};
+}
+
+// Every custom theme renders on a dark background. Kept in one place so files
+// that need dark-only styling (e.g. dropdown options) don't have to repeat the
+// list, and so it stays in sync with `selectableThemes` in application-theme.ts.
+$dark-theme-names: 'dark', 'ghostty', 'nord', 'dracula', 'gruvbox', 'tokyo-night';

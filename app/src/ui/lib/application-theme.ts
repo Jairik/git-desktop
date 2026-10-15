@@ -16,24 +16,89 @@ export enum ApplicationTheme {
   Light = 'light',
   Dark = 'dark',
   System = 'system',
+  Ghostty = 'ghostty',
+  Nord = 'nord',
+  Dracula = 'dracula',
+  Gruvbox = 'gruvbox',
+  TokyoNight = 'tokyo-night',
 }
 
-export type ApplicableTheme = ApplicationTheme.Light | ApplicationTheme.Dark
+/**
+ * The themes that can actually be applied to the app. This is every
+ * user-selectable theme except `System`, which is resolved to one of the
+ * others at runtime.
+ */
+export type ApplicableTheme =
+  | ApplicationTheme.Light
+  | ApplicationTheme.Dark
+  | ApplicationTheme.Ghostty
+  | ApplicationTheme.Nord
+  | ApplicationTheme.Dracula
+  | ApplicationTheme.Gruvbox
+  | ApplicationTheme.TokyoNight
 
 /**
- * Gets the friendly name of an application theme for use
- * in persisting to storage and/or calculating the required
- * body class name to set in order to apply the theme.
+ * Every theme the user can pick, in the order the Appearance dialog shows them.
+ * `System` is intentionally absent: it's resolved to one of these at runtime
+ * and only offered when the OS supports reporting appearance changes.
+ */
+export const selectableThemes: ReadonlyArray<ApplicableTheme> = [
+  ApplicationTheme.Light,
+  ApplicationTheme.Dark,
+  ApplicationTheme.Ghostty,
+  ApplicationTheme.Nord,
+  ApplicationTheme.Dracula,
+  ApplicationTheme.Gruvbox,
+  ApplicationTheme.TokyoNight,
+]
+
+/**
+ * The themes that render on a dark background. When adding a theme, this and
+ * `$dark-theme-names` in `app/styles/themes/_custom-theme.scss` must agree.
+ */
+const darkThemes: ReadonlySet<ApplicableTheme> = new Set([
+  ApplicationTheme.Dark,
+  ApplicationTheme.Ghostty,
+  ApplicationTheme.Nord,
+  ApplicationTheme.Dracula,
+  ApplicationTheme.Gruvbox,
+  ApplicationTheme.TokyoNight,
+])
+
+/**
+ * Gets the native theme source ('light' | 'dark' | 'system') that should be
+ * applied for the given application theme. This drives the OS-level window
+ * chrome and is used when reporting the active theme.
  */
 export function getThemeName(theme: ApplicationTheme): ThemeSource {
-  switch (theme) {
-    case ApplicationTheme.Light:
-      return 'light'
-    case ApplicationTheme.Dark:
-      return 'dark'
-    default:
-      return 'system'
+  if (theme === ApplicationTheme.System) {
+    return 'system'
   }
+
+  return isDarkTheme(theme) ? 'dark' : 'light'
+}
+
+/**
+ * Whether the given applicable theme renders on a dark background.
+ *
+ * This is used to set the document color scheme and the native window colors,
+ * and drives dark-only styling that isn't expressed through CSS variables.
+ */
+export function isDarkTheme(theme: ApplicableTheme): boolean {
+  return darkThemes.has(theme)
+}
+
+/**
+ * Resolves a user's selected theme to the theme that should actually be
+ * applied. `System` is resolved to the currently active light/dark appearance,
+ * every other theme is applied as-is.
+ */
+export async function resolveApplicableTheme(
+  theme: ApplicationTheme
+): Promise<ApplicableTheme> {
+  return theme === ApplicationTheme.System
+    ? await getCurrentlyAppliedTheme()
+    : theme
 }
 
 // The key under which the decision to automatically switch the theme is persisted
@@ -84,15 +149,23 @@ function getApplicationThemeSetting(): ApplicationTheme {
     }
   }
 
-  if (
-    themeSetting === ApplicationTheme.Light ||
-    themeSetting === ApplicationTheme.Dark ||
-    themeSetting === ApplicationTheme.System
-  ) {
+  if (isApplicationTheme(themeSetting)) {
     return themeSetting
   }
 
   return ApplicationTheme.Dark
+}
+
+/**
+ * Guards against unrecognized values in persistent storage (e.g. a theme that
+ * was removed in a later version). Keeping the list in one place makes adding
+ * a new theme a matter of extending the enum and this check.
+ */
+function isApplicationTheme(value: string | null): value is ApplicationTheme {
+  return (
+    value === ApplicationTheme.System ||
+    selectableThemes.some(theme => theme === value)
+  )
 }
 
 /**

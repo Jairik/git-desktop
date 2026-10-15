@@ -3,6 +3,7 @@ import * as os from 'os'
 import * as Path from 'path'
 import {
   cachedModelList,
+  ChatTimeoutMs,
   findCommitMessageSkill,
   findExecutable,
   GenerationTimeoutMs,
@@ -118,6 +119,74 @@ export const agyAgent: ILocalAgent = {
 
       return parseCommitMessage(extractAgyResponse(stdout))
     })
+  },
+
+  async chat({ prompt, model, cwd, signal, session, onProgress }) {
+    const args = [
+      '--print',
+      prompt,
+      '--model',
+      model,
+      '--output-format',
+      'stream-json',
+    ]
+
+    if (session !== null) {
+      args.push('--conversation', session)
+    }
+
+    onProgress('Starting Antigravity')
+
+    // agy reports the conversation id on the first turn, we pass it back in
+    // (as --conversation) to continue the same conversation.
+    let conversation = session
+    let draft = ''
+    const stdout = await runAgentCli('agy', EnvVar, getAgyPath(), args, {
+      cwd,
+      signal,
+      timeout: ChatTimeoutMs,
+      onStdoutLine: line => {
+        const event = parseEvent(line)
+        if (event === null) {
+          return
+        }
+
+        if (
+          event.event === 'init' &&
+          typeof event.conversation_id === 'string'
+        ) {
+          conversation = event.conversation_id
+        }
+
+        const update = event.step_update
+        if (update === undefined) {
+          return
+        }
+
+        if (update.step_type === 'tool' && update.state === 'ACTIVE') {
+          onProgress(`Using ${update.tool_name}`, draft)
+        } else if (typeof update.text_delta === 'string') {
+          draft += update.text_delta
+          onProgress('Writing a reply', draft)
+        } else if (update.step_type === 'agent_response') {
+          onProgress('Thinking', draft)
+        }
+      },
+      describeFailure: findAgyError,
+    })
+
+    const error = findAgyError(stdout)
+    if (error !== null) {
+      throw new Error(`agy failed: ${error}`)
+    }
+
+    const text =
+      draft.trim().length > 0 ? draft.trim() : extractAgyResponse(stdout).trim()
+    if (text.length === 0) {
+      throw new Error('agy did not return a reply')
+    }
+
+    return { text, session: conversation }
   },
 }
 

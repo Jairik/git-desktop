@@ -221,6 +221,20 @@ export function buildDefaultMenuTemplate({
         click: emit('go-to-commit-message'),
       },
       {
+        label: __DARWIN__
+          ? 'Generate Commit Message'
+          : 'Generate co&mmit message',
+        id: 'generate-commit-message',
+        accelerator: 'CmdOrCtrl+Shift+K',
+        click: emit('generate-commit-message'),
+      },
+      {
+        label: __DARWIN__ ? 'Agent Chat' : '&Agent chat',
+        id: 'toggle-agent-chat',
+        accelerator: 'CmdOrCtrl+Shift+L',
+        click: emit('toggle-agent-chat'),
+      },
+      {
         label: getStashedChangesLabel(isStashedChangesVisible),
         id: 'toggle-stashed-changes',
         accelerator: 'Ctrl+H',

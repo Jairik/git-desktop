@@ -1,0 +1,179 @@
+@import '../../mixins';
+
+#agent-chat {
+  width: 640px;
+  max-width: 80vw;
+  height: 620px;
+  max-height: 80vh;
+
+  // The transcript owns the scrolling, so the dialog content should not scroll.
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .agent-chat-transcript {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-double);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-double);
+  }
+
+  .agent-chat-empty {
+    margin: auto 0;
+    text-align: center;
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+  }
+
+  .agent-chat-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-half);
+    animation: local-agent-fade-in 250ms ease-out;
+  }
+
+  .agent-chat-author {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-half);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary-color);
+    min-width: 0;
+  }
+
+  .agent-chat-model {
+    font-family: var(--font-family-monospace);
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .agent-chat-elapsed {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .agent-chat-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+  }
+
+  .agent-chat-turn-user .agent-chat-text {
+    align-self: flex-start;
+    padding: var(--spacing-half) var(--spacing);
+    border-radius: var(--border-radius);
+    background: var(--box-alt-background-color);
+  }
+
+  .agent-chat-orb {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: conic-gradient(#a371f7, #58a6ff, #3fb950, #d29922, #a371f7);
+    animation: local-agent-spin 1.6s linear infinite, local-agent-pulse 1.6s ease-in-out infinite;
+  }
+
+  .agent-chat-step {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary-color);
+    animation: local-agent-fade-in 250ms ease-out;
+  }
+
+  .agent-chat-dots::after {
+    content: '';
+    display: inline-block;
+    width: 1.5em;
+    text-align: left;
+    animation: local-agent-dots 1.2s steps(4, end) infinite;
+  }
+
+  .agent-chat-draft {
+    max-height: 12em;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column-reverse;
+    white-space: pre-wrap;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary-color);
+  }
+
+  .agent-chat-composer {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-half);
+    padding: var(--spacing) var(--spacing-double) var(--spacing-double);
+    border-top: var(--base-border);
+  }
+
+  .agent-chat-target-button {
+    align-self: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-half);
+    height: 24px;
+
+    .agent-chat-target-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--font-family-monospace);
+      font-size: var(--font-size-xs);
+    }
+  }
+
+  .agent-chat-input {
+    width: 100%;
+    resize: none;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-half) var(--spacing);
+    border: var(--base-border);
+    border-radius: var(--border-radius);
+    background: var(--background-color);
+    color: var(--text-color);
+
+    &:focus {
+      outline: none;
+      border-color: var(--focus-color);
+    }
+  }
+
+  .dialog-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing);
+  }
+
+  @media (prefers-reduced-motion) {
+    .agent-chat-orb,
+    .agent-chat-dots::after,
+    .agent-chat-turn,
+    .agent-chat-step {
+      animation: none;
+    }
+  }
+}

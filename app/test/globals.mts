@@ -2,6 +2,23 @@ import 'fake-indexeddb/auto'
 import 'global-jsdom/register'
 import { mock } from 'node:test'
 
+// Node.js 22+ exposes its own `localStorage`/`sessionStorage` globals (which
+// resolve to `undefined` unless the process was started with
+// `--localstorage-file`). Because those keys already exist on `globalThis`,
+// `global-jsdom` skips copying jsdom's implementations over them, leaving
+// tests with an unusable `localStorage`. Adopt jsdom's implementations
+// explicitly so tests can read and write storage.
+for (const key of ['localStorage', 'sessionStorage'] as const) {
+  const storage = window[key]
+  if (storage !== undefined) {
+    Object.defineProperty(globalThis, key, {
+      value: storage,
+      configurable: true,
+      writable: true,
+    })
+  }
+}
+
 // These constants are defined by Webpack at build time, but since tests aren't
 // built with Webpack we need to make sure these exist at runtime.
 const packageInfo = await import('../package.json')

@@ -7,6 +7,9 @@ import * as Path from 'path'
 /** Maximum time we'll wait for an agent to come back with a message. */
 export const GenerationTimeoutMs = 3 * 60 * 1000
 
+/** Maximum time we'll wait for an agent to come back with a chat reply. */
+export const ChatTimeoutMs = 5 * 60 * 1000
+
 /** Thrown when an in-flight local agent generation is cancelled. */
 export class LocalAgentCancelledError extends Error {
   public constructor() {
@@ -18,6 +21,30 @@ export class LocalAgentCancelledError extends Error {
 export interface ILocalAgentCommitMessage {
   readonly title: string
   readonly description: string
+}
+
+/** A message sent to a CLI agent, asking it to reply in a conversation. */
+export interface ILocalAgentChatRequest {
+  /** What the user typed. */
+  readonly prompt: string
+  /** The model to run the turn with. */
+  readonly model: string
+  /** Working directory the agent runs in (usually the repository). */
+  readonly cwd: string
+  readonly signal: AbortSignal
+  /** The conversation to continue, or null to start a new one. */
+  readonly session: string | null
+  readonly onProgress: LocalAgentProgressCallback
+}
+
+/** An agent's reply, plus the conversation id to use for the next turn. */
+export interface ILocalAgentChatReply {
+  readonly text: string
+  /**
+   * The id to pass back as `session` on the next turn. Agents that can't
+   * report one return null, which starts a fresh conversation each time.
+   */
+  readonly session: string | null
 }
 
 export interface ILocalAgentModel {
@@ -55,6 +82,13 @@ export interface ILocalAgent {
     signal: AbortSignal,
     onProgress: LocalAgentProgressCallback
   ): Promise<ILocalAgentCommitMessage>
+
+  /**
+   * Send a single message and return the agent's reply. `session` carries the
+   * conversation between turns; agents that can't continue a conversation
+   * return null and start fresh.
+   */
+  chat(request: ILocalAgentChatRequest): Promise<ILocalAgentChatReply>
 }
 
 /**

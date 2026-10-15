@@ -1,0 +1,59 @@
+// Ghostty theme
+//
+// A dark custom theme that mirrors the palette of the "Ghostty Default" theme
+// used by the author's kitty terminal so the app matches the terminal.
+//
+// Palette source (kitty `current-theme.conf`, "Ghostty Default"):
+//   foreground #ffffff            background #292c33
+//   color0 #1d1f21   color8  #666666
+//   color1 #bf6b69   color9  #c55757
+//   color2 #b7bd73   color10 #bcc95f
+//   color3 #e9c880   color11 #e1c65e
+//   color4 #88a1bb   color12 #83a5d6
+//   color5 #ad95b8   color13 #bc99d4
+//   color6 #95bdb7   color14 #83beb1
+//   color7 #c5c8c6   color15 #eaeaea
+//   active_border #88a1bb   inactive_border #666666
+//   active_tab_background #88a1bb   inactive_tab_background #363a43
+
+$ghostty-black: #1d1f21;
+$ghostty-bright-black: #666666;
+$ghostty-red: #bf6b69;
+$ghostty-bright-red: #c55757;
+$ghostty-green: #b7bd73;
+$ghostty-bright-green: #bcc95f;
+$ghostty-yellow: #e9c880;
+$ghostty-bright-yellow: #e1c65e;
+$ghostty-blue: #88a1bb;
+$ghostty-bright-blue: #83a5d6;
+$ghostty-magenta: #ad95b8;
+$ghostty-bright-magenta: #bc99d4;
+$ghostty-cyan: #95bdb7;
+$ghostty-bright-cyan: #83beb1;
+$ghostty-white: #c5c8c6;
+$ghostty-bright-white: #eaeaea;
+
+$ghostty-background: #292c33;
+$ghostty-foreground: #ffffff;
+$ghostty-tab-inactive-background: #363a43;
+
+body.theme-ghostty {
+  @include custom-theme(
+    $background: $ghostty-background,
+    $foreground: $ghostty-foreground,
+    $secondary: $ghostty-white,
+    $muted: $ghostty-bright-black,
+    $accent: $ghostty-blue,
+    $accent-bright: $ghostty-bright-blue,
+    $green: $ghostty-green,
+    $red: $ghostty-red,
+    $yellow: $ghostty-yellow,
+    $magenta: $ghostty-magenta,
+    $cyan: $ghostty-cyan,
+    $black: $ghostty-black,
+    $bright-red: $ghostty-bright-red,
+    $bright-white: $ghostty-bright-white,
+    $secondary-button-background: $ghostty-tab-inactive-background,
+    $conflicted: $ghostty-bright-yellow
+  );
+}

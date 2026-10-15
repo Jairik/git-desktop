@@ -24,6 +24,7 @@ type ButtonProps = {
 
 type CommitMessageTestInstance = {
   state: CommitMessage['state']
+  readonly isShowingLocalAgentStatus: boolean
   readonly renderLocalAgentButton: () => React.ReactElement | null
   readonly onLocalAgentButtonClick: (
     event: Pick<React.MouseEvent<HTMLButtonElement>, 'preventDefault'>
@@ -187,37 +188,32 @@ describe('CommitMessage', () => {
     assert.equal(calls[0].agent, 'opencode')
   })
 
-  it('does not cancel a generation the local agent did not start', () => {
-    let cancelCount = 0
+  it('disables the button when there is nothing to generate from', () => {
     const component = toTestInstance(
       new CommitMessage(
         createProps({
-          onCancelGenerateCommitMessage: () => {
-            cancelCount++
-          },
+          isGeneratingCommitMessage: false,
+          filesSelected: [],
+          commitToAmend: null,
         })
       )
     )
 
     assert.equal(getLocalAgentButtonProps(component).disabled, true)
-
-    clickLocalAgentButton(component)
-
-    assert.equal(cancelCount, 0)
   })
 
-  it('cancels an in-flight local agent generation', () => {
+  it('offers to cancel an in-flight generation', () => {
     let cancelCount = 0
     const component = toTestInstance(
       new CommitMessage(
         createProps({
+          isGeneratingCommitMessage: true,
           onCancelGenerateCommitMessage: () => {
             cancelCount++
           },
         })
       )
     )
-    component.state = { ...component.state, isLocalAgentGenerating: true }
 
     const buttonProps = getLocalAgentButtonProps(component)
     assert.equal(buttonProps.ariaLabel, 'Cancel generating commit details')
@@ -226,5 +222,29 @@ describe('CommitMessage', () => {
     clickLocalAgentButton(component)
 
     assert.equal(cancelCount, 1)
+  })
+
+  it('shows the agent status while a generation is in flight', () => {
+    const component = toTestInstance(
+      new CommitMessage(createProps({ isGeneratingCommitMessage: true }))
+    )
+
+    // Nothing has been reported by the agent yet
+    assert.equal(component.isShowingLocalAgentStatus, false)
+
+    component.state = {
+      ...component.state,
+      localAgentStatus: {
+        repositoryPath: '/tmp/desktop-fixture',
+        agentName: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        message: 'Thinking',
+        detail: null,
+        draft: null,
+        startedAt: Date.now(),
+      },
+    }
+
+    assert.equal(component.isShowingLocalAgentStatus, true)
   })
 })

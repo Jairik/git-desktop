@@ -1,8 +1,9 @@
 import * as React from 'react'
 import {
+  ApplicableTheme,
   ApplicationTheme,
-  getThemeName,
   getCurrentlyAppliedTheme,
+  isDarkTheme,
 } from './lib/application-theme'
 import * as ipcRenderer from '../lib/ipc-renderer'
 
@@ -36,26 +37,27 @@ export class AppTheme extends React.PureComponent<IAppThemeProps> {
   }
 
   private async ensureTheme() {
-    let themeToDisplay = this.props.theme
+    // Only `System` requires an async lookup. Explicitly selected themes are
+    // applied synchronously so there's no flash of the previous theme.
+    const themeToDisplay =
+      this.props.theme === ApplicationTheme.System
+        ? await getCurrentlyAppliedTheme()
+        : this.props.theme
 
-    if (this.props.theme === ApplicationTheme.System) {
-      themeToDisplay = await getCurrentlyAppliedTheme()
-    }
-
-    const newThemeClassName = `theme-${getThemeName(themeToDisplay)}`
+    const newThemeClassName = `theme-${themeToDisplay}`
 
     if (!document.body.classList.contains(newThemeClassName)) {
       this.clearThemes()
       document.body.classList.add(newThemeClassName)
-      this.updateColorScheme()
+      this.updateColorScheme(themeToDisplay)
     }
   }
 
-  private updateColorScheme = () => {
-    const isDarkTheme = document.body.classList.contains('theme-dark')
+  private updateColorScheme = (theme: ApplicableTheme) => {
+    const isDark = isDarkTheme(theme)
     const rootStyle = document.documentElement.style
 
-    rootStyle.colorScheme = isDarkTheme ? 'dark' : 'light'
+    rootStyle.colorScheme = isDark ? 'dark' : 'light'
 
     // Update the window's background color to match the CSS value
     const backgroundColor = getComputedStyle(document.body).getPropertyValue(

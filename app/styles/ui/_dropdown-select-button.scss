@@ -120,10 +120,12 @@
   }
 }
 
-body.theme-dark {
-  .dropdown-select-button-options {
-    box-shadow: none;
-    margin-top: 1px;
-    width: 100%;
+@each $theme-name in $dark-theme-names {
+  body.theme-#{$theme-name} {
+    .dropdown-select-button-options {
+      box-shadow: none;
+      margin-top: 1px;
+      width: 100%;
+    }
   }
 }

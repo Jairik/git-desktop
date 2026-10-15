@@ -3,6 +3,7 @@ import * as os from 'os'
 import * as Path from 'path'
 import {
   cachedModelList,
+  ChatTimeoutMs,
   findExecutable,
   GenerationTimeoutMs,
   ILocalAgent,
@@ -92,6 +93,43 @@ export const opencodeAgent: ILocalAgent = {
       return parseCommitMessage(extractOpencodeText(stdout))
     })
   },
+
+  async chat({ prompt, model, cwd, signal, session, onProgress }) {
+    // opencode creates the session on first use when the id is unknown, and
+    // requires ids to start with 'ses'.
+    const id = session ?? `ses_${crypto.randomUUID().replace(/-/g, '')}`
+
+    onProgress('Starting opencode')
+
+    let draft = ''
+    const stdout = await runAgentCli(
+      'opencode',
+      EnvVar,
+      getOpencodePath(),
+      ['run', '--format', 'json', '--model', model, '--session', id, prompt],
+      {
+        cwd,
+        signal,
+        timeout: ChatTimeoutMs,
+        onStdoutLine: line => {
+          draft = reportChatProgress(line, draft, onProgress)
+        },
+        describeFailure: findOpencodeError,
+      }
+    )
+
+    const error = findOpencodeError(stdout)
+    if (error !== null) {
+      throw new Error(`opencode failed: ${error}`)
+    }
+
+    const text = draft.trim()
+    if (text.length === 0) {
+      throw new Error('opencode did not return a reply')
+    }
+
+    return { text, session: id }
+  },
 }
 
 /** Parse the JSON events opencode prints, one per line. */
@@ -138,6 +176,36 @@ function reportProgress(line: string, onProgress: LocalAgentProgressCallback) {
   } else if (event.type === 'text') {
     onProgress('Writing the commit message')
   }
+}
+
+/**
+ * Fold one opencode event into a chat status update. Returns the reply text
+ * seen so far, which is streamed as the draft and used as the final reply.
+ */
+function reportChatProgress(
+  line: string,
+  draft: string,
+  onProgress: LocalAgentProgressCallback
+): string {
+  const event = parseEvent(line)
+  if (event === null) {
+    return draft
+  }
+
+  if (event.type === 'step_start') {
+    onProgress('Thinking', draft)
+  } else if (event.type === 'tool_use') {
+    const tool = event.part?.tool
+    if (typeof tool === 'string') {
+      onProgress(`Using ${tool}`, draft)
+    }
+  } else if (event.type === 'text' && typeof event.part?.text === 'string') {
+    draft =
+      draft.length > 0 ? `${draft}\n\n${event.part.text}` : event.part.text
+    onProgress('Writing a reply', draft)
+  }
+
+  return draft
 }
 
 function findOpencodeError(stdout: string): string | null {

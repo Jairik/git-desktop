@@ -43,7 +43,10 @@ fi
 mkdir -p "$BIN_DIR" "$APP_DIR"
 ln -sf "$EXECUTABLE" "$BIN_DIR/$BIN_NAME"
 
-cat >"$DESKTOP_FILE" <<EOF
+# Write to a temp file and move it into place so a launcher scanning the
+# directory never reads a half-written entry.
+TMP_DESKTOP="$(mktemp "$APP_DIR/.git-desktop.XXXXXX")"
+cat >"$TMP_DESKTOP" <<EOF
 [Desktop Entry]
 Name=Git Desktop (fork)
 Comment=GitHub Desktop fork
@@ -52,9 +55,10 @@ Icon=$ICON
 Type=Application
 Terminal=false
 Categories=Development;RevisionControl;
-StartupWMClass=GitHub Desktop
+StartupWMClass=github-desktop
 MimeType=$MIME_TYPES
 EOF
+mv "$TMP_DESKTOP" "$DESKTOP_FILE"
 
 refresh_desktop_database
 

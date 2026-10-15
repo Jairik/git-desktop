@@ -158,10 +158,14 @@
 
   .theme-selector {
     display: flex;
+    // Wrap so a growing set of theme swatches stays legible instead of
+    // shrinking to fit a single row.
+    flex-wrap: wrap;
     margin: 0 calc(var(--spacing-half) * -1);
 
     .radio-button-component {
       display: block;
+      flex: 1 1 120px;
       padding: var(--spacing-half);
       position: relative;
       margin: 0;

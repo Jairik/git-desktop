@@ -1,6 +1,8 @@
 import * as React from 'react'
 import {
+  ApplicableTheme,
   ApplicationTheme,
+  selectableThemes,
   supportsSystemThemeChanges,
   getCurrentlyAppliedTheme,
 } from '../lib/application-theme'
@@ -22,6 +24,20 @@ import {
   numberFormatToKey,
 } from '../../models/formatting-preferences'
 import { formatNumber } from '../../lib/format-number'
+
+/**
+ * The display name shown next to each theme's preview swatch. Keys must cover
+ * every entry in `selectableThemes`.
+ */
+const themeLabels: Record<ApplicableTheme, string> = {
+  [ApplicationTheme.Light]: 'Light',
+  [ApplicationTheme.Dark]: 'Dark',
+  [ApplicationTheme.Ghostty]: 'Ghostty',
+  [ApplicationTheme.Nord]: 'Nord',
+  [ApplicationTheme.Dracula]: 'Dracula',
+  [ApplicationTheme.Gruvbox]: 'Gruvbox',
+  [ApplicationTheme.TokyoNight]: 'Tokyo Night',
+}
 
 interface IAppearanceProps {
   readonly selectedTheme: ApplicationTheme
@@ -140,40 +156,35 @@ export class Appearance extends React.Component<
   }
 
   public renderThemeSwatch = (theme: ApplicationTheme) => {
-    const darkThemeImage = encodePathAsUrl(__dirname, 'static/ghd_dark.svg')
-    const lightThemeImage = encodePathAsUrl(__dirname, 'static/ghd_light.svg')
+    if (theme === ApplicationTheme.System) {
+      const darkThemeImage = encodePathAsUrl(__dirname, 'static/ghd_dark.svg')
+      const lightThemeImage = encodePathAsUrl(__dirname, 'static/ghd_light.svg')
 
-    switch (theme) {
-      case ApplicationTheme.Light:
-        return (
-          <span>
+      /** Why three images? The system theme swatch uses the first image
+       * positioned relatively to get the label container size and uses the
+       * second and third positioned absolutely over first and third one
+       * clipped in half to render a split dark and light theme swatch. */
+      return (
+        <span>
+          <span className="system-theme-swatch">
             <img src={lightThemeImage} alt="" />
-            <span className="theme-value-label">Light</span>
-          </span>
-        )
-      case ApplicationTheme.Dark:
-        return (
-          <span>
+            <img src={lightThemeImage} alt="" />
             <img src={darkThemeImage} alt="" />
-            <span className="theme-value-label">Dark</span>
           </span>
-        )
-      case ApplicationTheme.System:
-        /** Why three images? The system theme swatch uses the first image
-         * positioned relatively to get the label container size and uses the
-         * second and third positioned absolutely over first and third one
-         * clipped in half to render a split dark and light theme swatch. */
-        return (
-          <span>
-            <span className="system-theme-swatch">
-              <img src={lightThemeImage} alt="" />
-              <img src={lightThemeImage} alt="" />
-              <img src={darkThemeImage} alt="" />
-            </span>
-            <span className="theme-value-label">System</span>
-          </span>
-        )
+          <span className="theme-value-label">System</span>
+        </span>
+      )
     }
+
+    // Each theme's swatch is a preview image named after the theme's value.
+    const themeImage = encodePathAsUrl(__dirname, `static/ghd_${theme}.svg`)
+
+    return (
+      <span>
+        <img src={themeImage} alt="" />
+        <span className="theme-value-label">{themeLabels[theme]}</span>
+      </span>
+    )
   }
 
   private renderSelectedTheme() {
@@ -184,8 +195,7 @@ export class Appearance extends React.Component<
     }
 
     const themes = [
-      ApplicationTheme.Light,
-      ApplicationTheme.Dark,
+      ...selectableThemes,
       ...(supportsSystemThemeChanges() ? [ApplicationTheme.System] : []),
     ]
 

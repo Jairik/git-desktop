@@ -123,8 +123,8 @@ import { getAppPath } from '../../ui/lib/app-proxy'
 import {
   ApplicableTheme,
   ApplicationTheme,
-  getCurrentlyAppliedTheme,
   getPersistedThemeName,
+  resolveApplicableTheme,
   setPersistedTheme,
 } from '../../ui/lib/application-theme'
 import {
@@ -2586,13 +2586,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Make sure the persisted theme is applied
     setPersistedTheme(this.selectedTheme)
 
-    this.currentTheme = await getCurrentlyAppliedTheme()
+    this.currentTheme = await resolveApplicableTheme(this.selectedTheme)
 
     this.selectedTabSize = getNumber(tabSizeKey, tabSizeDefault)
 
     themeChangeMonitor.onThemeChanged(theme => {
-      this.currentTheme = theme
-      this.emitUpdate()
+      // Only the System theme follows the OS appearance. Explicitly selected
+      // themes (including custom ones) must not be overridden by OS updates.
+      if (this.selectedTheme === ApplicationTheme.System) {
+        this.currentTheme = theme
+        this.emitUpdate()
+      }
     })
 
     this.lastThankYou = getObject<ILastThankYou>(lastThankYouKey)
@@ -8964,6 +8968,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public _setSelectedTheme(theme: ApplicationTheme) {
     setPersistedTheme(theme)
     this.selectedTheme = theme
+
+    if (theme === ApplicationTheme.System) {
+      // Resolving the system appearance is async; apply it once resolved. The
+      // native theme monitor also covers subsequent OS appearance changes.
+      resolveApplicableTheme(theme).then(currentTheme => {
+        if (this.selectedTheme === theme) {
+          this.currentTheme = currentTheme
+          this.emitUpdate()
+        }
+      })
+    } else {
+      // Apply explicitly selected themes (including custom ones) immediately.
+      // The native theme-changed notification isn't enough here: switching
+      // between themes that share the same native light/dark source (e.g.
+      // Dark -> Ghostty) doesn't emit a native theme update.
+      this.currentTheme = theme
+    }
+
     this.emitUpdate()
 
     return Promise.resolve()

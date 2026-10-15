@@ -68,16 +68,16 @@ import { HookProgress } from '../../lib/git'
 import { assertNever } from '../../lib/fatal-error'
 import {
   getLocalAgent,
-  getRecentLocalAgents,
   getSelectedLocalAgent,
-  ILocalAgent,
-  ILocalAgentModel,
   ILocalAgentSelection,
   ILocalAgentStatus,
-  LocalAgents,
   onLocalAgentStatus,
   setSelectedLocalAgent,
 } from '../../lib/local-agent'
+import {
+  buildLocalAgentMenu,
+  formatLocalAgentSelection,
+} from '../lib/local-agent-menu'
 import { Disposable } from 'event-kit'
 
 const addAuthorIcon: OcticonSymbolVariant = {
@@ -279,9 +279,6 @@ interface ICommitMessageState {
   /** The agent and model used for local agent commit message generation */
   readonly localAgentSelection: ILocalAgentSelection
 
-  /** Whether the in-flight commit message generation was started locally */
-  readonly isLocalAgentGenerating: boolean
-
   /** What the local agent is currently doing, while it's generating */
   readonly localAgentStatus: ILocalAgentStatus | null
 
@@ -348,7 +345,6 @@ export class CommitMessage extends React.Component<
       repoRuleCommitAuthorFailures: new RepoRulesMetadataFailures(),
       repoRuleBranchNameFailures: new RepoRulesMetadataFailures(),
       localAgentSelection: getSelectedLocalAgent(),
-      isLocalAgentGenerating: false,
       localAgentStatus: null,
       now: Date.now(),
     }
@@ -423,14 +419,6 @@ export class CommitMessage extends React.Component<
     prevProps: ICommitMessageProps,
     prevState: ICommitMessageState
   ) {
-    if (
-      prevProps.isGeneratingCommitMessage &&
-      !this.props.isGeneratingCommitMessage &&
-      this.state.isLocalAgentGenerating
-    ) {
-      this.setState({ isLocalAgentGenerating: false, localAgentStatus: null })
-    }
-
     if (this.isShowingLocalAgentStatus) {
       this.startLocalAgentTimer()
     } else {
@@ -974,8 +962,8 @@ export class CommitMessage extends React.Component<
 
   private get isShowingLocalAgentStatus() {
     return (
-      this.state.isLocalAgentGenerating &&
-      this.props.isGeneratingCommitMessage === true
+      this.props.isGeneratingCommitMessage === true &&
+      this.state.localAgentStatus !== null
     )
   }
 
@@ -1027,7 +1015,7 @@ export class CommitMessage extends React.Component<
   }
 
   private generateWithLocalAgent() {
-    this.setState({ isLocalAgentGenerating: true, localAgentStatus: null })
+    this.setState({ localAgentStatus: null })
     this.props.onGenerateCommitMessageWithLocalAgent?.(
       this.props.filesSelected,
       this.state.localAgentSelection
@@ -1101,10 +1089,10 @@ export class CommitMessage extends React.Component<
   ) => {
     e.preventDefault()
 
+    // While generating, the button turns into a cancel button. This also
+    // covers generations started from the menu (or anywhere else).
     if (this.props.isGeneratingCommitMessage) {
-      if (this.state.isLocalAgentGenerating) {
-        this.props.onCancelGenerateCommitMessage?.()
-      }
+      this.props.onCancelGenerateCommitMessage?.()
       return
     }
 
@@ -1121,40 +1109,10 @@ export class CommitMessage extends React.Component<
   ) => {
     e.preventDefault()
 
-    const current = this.state.localAgentSelection
-    const toItem = (selection: ILocalAgentSelection, label: string) => ({
-      label,
-      type: 'checkbox' as const,
-      checked:
-        selection.agent === current.agent && selection.model === current.model,
-      action: () => this.selectLocalAgent(selection),
-    })
-
-    const items: IMenuItem[] = getRecentLocalAgents().map(s =>
-      toItem(s, formatLocalAgentSelection(s))
+    const items = await buildLocalAgentMenu(
+      this.state.localAgentSelection,
+      this.selectLocalAgent
     )
-    items.push({ type: 'separator' })
-
-    const listings = await Promise.allSettled(
-      LocalAgents.map(a => a.listModels())
-    )
-
-    LocalAgents.forEach((agent, i) => {
-      const listing = listings[i]
-      if (listing.status === 'rejected') {
-        log.error(`Failed to list ${agent.name} models`, listing.reason)
-        items.push({
-          label: agent.name,
-          submenu: [{ label: 'Could not list models', enabled: false }],
-        })
-        return
-      }
-
-      items.push({
-        label: agent.name,
-        submenu: buildModelMenu(agent, listing.value, toItem),
-      })
-    })
 
     showContextualMenu(items)
   }
@@ -1170,16 +1128,16 @@ export class CommitMessage extends React.Component<
       isGeneratingCommitMessage,
       commitToAmend,
     } = this.props
-    const { localAgentSelection, isLocalAgentGenerating } = this.state
+    const { localAgentSelection } = this.state
     const selectionLabel = formatLocalAgentSelection(localAgentSelection)
 
     const noChangesAvailable = !commitToAmend && filesSelected.length === 0
-    const showCancel = isGeneratingCommitMessage && isLocalAgentGenerating
+    const isGenerating = isGeneratingCommitMessage === true
 
     let ariaLabel = `Generate commit message with ${selectionLabel}`
-    if (showCancel) {
+    if (isGenerating) {
       ariaLabel = 'Cancel generating commit details'
-    } else if (!isGeneratingCommitMessage && noChangesAvailable) {
+    } else if (noChangesAvailable) {
       ariaLabel += '. Files must be selected to generate a commit message.'
     }
 
@@ -1192,16 +1150,14 @@ export class CommitMessage extends React.Component<
           ariaLabel={ariaLabel}
           tooltip={ariaLabel}
           disabled={
-            isCommitting === true ||
-            (isGeneratingCommitMessage && !isLocalAgentGenerating) ||
-            (!isGeneratingCommitMessage && noChangesAvailable)
+            isCommitting === true || (!isGenerating && noChangesAvailable)
           }
         >
           <AriaLiveContainer
-            message={isLocalAgentGenerating ? 'Generating commit details…' : ''}
+            message={isGenerating ? 'Generating commit details…' : ''}
           />
           <Octicon
-            symbol={showCancel ? octicons.squareCircle : octicons.sparkle}
+            symbol={isGenerating ? octicons.squareCircle : octicons.sparkle}
           />
         </Button>
         <Button
@@ -1209,7 +1165,7 @@ export class CommitMessage extends React.Component<
           onClick={this.onLocalAgentModelButtonClick}
           ariaLabel="Choose local agent and model"
           tooltip={`Local agent: ${selectionLabel}`}
-          disabled={isGeneratingCommitMessage}
+          disabled={isGenerating}
         >
           <Octicon symbol={octicons.triangleDown} />
         </Button>
@@ -1994,38 +1950,4 @@ export class CommitMessage extends React.Component<
       </div>
     )
   }
-}
-
-function formatLocalAgentSelection({ agent, model }: ILocalAgentSelection) {
-  return `${getLocalAgent(agent)?.name ?? agent}: ${model}`
-}
-
-/** Menu items for an agent's models, nested by group when they have one. */
-function buildModelMenu(
-  agent: ILocalAgent,
-  models: ReadonlyArray<ILocalAgentModel>,
-  toItem: (selection: ILocalAgentSelection, label: string) => IMenuItem
-): IMenuItem[] {
-  const items: IMenuItem[] = []
-  const groups = new Map<string, IMenuItem[]>()
-
-  for (const model of models) {
-    const item = toItem({ agent: agent.id, model: model.id }, model.label)
-    if (model.group === undefined) {
-      items.push(item)
-      continue
-    }
-
-    let group = groups.get(model.group)
-    if (group === undefined) {
-      group = []
-      groups.set(model.group, group)
-      items.push({ label: model.group, submenu: group })
-    }
-    group.push(item)
-  }
-
-  return items.length > 0
-    ? items
-    : [{ label: 'No models available', enabled: false }]
 }
