@@ -1,10 +1,14 @@
 @import '../../mixins';
 
 #agent-chat {
-  width: 640px;
-  max-width: 80vw;
-  height: 620px;
-  max-height: 80vh;
+  width: 680px;
+  max-width: 82vw;
+  height: 640px;
+  max-height: 82vh;
+
+  // Everything in here leans a little larger than a regular dialog so a
+  // conversation is comfortable to read.
+  font-size: var(--font-size-md);
 
   // The transcript owns the scrolling, so the dialog content should not scroll.
   .dialog-content {
@@ -20,7 +24,7 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding: var(--spacing-double);
+    padding: var(--spacing-double) var(--spacing-double) var(--spacing);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-double);
@@ -28,9 +32,10 @@
 
   .agent-chat-empty {
     margin: auto 0;
+    padding: 0 var(--spacing-double);
     text-align: center;
+    line-height: 1.5;
     color: var(--text-secondary-color);
-    font-size: var(--font-size-sm);
   }
 
   .agent-chat-turn {
@@ -44,7 +49,7 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-half);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size);
     font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -72,7 +77,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     user-select: text;
-    font-size: var(--font-size-sm);
+    line-height: 1.6;
     color: var(--text-color);
   }
 
@@ -83,17 +88,92 @@
     background: var(--box-alt-background-color);
   }
 
+  // Rendered agent replies. Kept in step with the plain text styles above so a
+  // formatted reply reads the same as an unformatted one.
+  .agent-chat-markdown {
+    line-height: 1.6;
+    color: var(--text-color);
+    user-select: text;
+    overflow-wrap: break-word;
+
+    > :first-child {
+      margin-top: 0;
+    }
+
+    > :last-child {
+      margin-bottom: 0;
+    }
+
+    p {
+      margin: 0 0 var(--spacing);
+    }
+
+    ul,
+    ol {
+      margin: 0 0 var(--spacing);
+      padding-left: var(--spacing-double);
+    }
+
+    li {
+      margin-bottom: var(--spacing-half);
+    }
+
+    h3,
+    h4,
+    h5,
+    h6 {
+      margin: var(--spacing) 0 var(--spacing-half);
+      font-size: var(--font-size-md);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    a {
+      color: var(--link-button-color);
+      text-decoration: none;
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    strong {
+      font-weight: var(--font-weight-semibold);
+    }
+
+    code {
+      font-family: var(--font-family-monospace);
+      font-size: var(--font-size-sm);
+      background: var(--box-alt-background-color);
+      border-radius: 3px;
+      padding: 0 4px;
+    }
+
+    pre {
+      margin: 0 0 var(--spacing);
+      padding: var(--spacing) var(--spacing);
+      background: var(--box-alt-background-color);
+      border-radius: var(--border-radius);
+      overflow-x: auto;
+
+      code {
+        background: none;
+        padding: 0;
+      }
+    }
+  }
+
   .agent-chat-orb {
     flex-shrink: 0;
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: conic-gradient(#a371f7, #58a6ff, #3fb950, #d29922, #a371f7);
     animation: local-agent-spin 1.6s linear infinite, local-agent-pulse 1.6s ease-in-out infinite;
   }
 
   .agent-chat-step {
-    font-size: var(--font-size-sm);
+    line-height: 1.6;
     color: var(--text-secondary-color);
     animation: local-agent-fade-in 250ms ease-out;
   }
@@ -107,13 +187,14 @@
   }
 
   .agent-chat-draft {
-    max-height: 12em;
+    max-height: 14em;
     overflow: hidden;
     display: flex;
     flex-direction: column-reverse;
     white-space: pre-wrap;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size);
+    line-height: 1.5;
     color: var(--text-secondary-color);
   }
 
@@ -121,11 +202,13 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-half);
+    gap: var(--spacing);
     padding: var(--spacing) var(--spacing-double) var(--spacing-double);
     border-top: var(--base-border);
   }
 
+  // A low-key chip so it reads as a picker instead of a default button, and
+  // stays legible whatever the theme does with secondary buttons.
   .agent-chat-target-button {
     align-self: flex-start;
     min-width: 0;
@@ -133,14 +216,41 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-half);
-    height: 24px;
+    height: 32px;
+    padding: 0 var(--spacing);
+    border-radius: 999px;
 
-    .agent-chat-target-label {
+    background: transparent;
+    border: 1px solid var(--box-border-contrast-color);
+    color: var(--text-secondary-color);
+
+    &:not([aria-disabled='true']):hover {
+      background: var(--box-alt-background-color);
+      border-color: var(--box-border-contrast-color);
+      color: var(--text-color);
+    }
+
+    .agent-chat-target-agent {
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-color);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .agent-chat-target-model {
       font-family: var(--font-family-monospace);
-      font-size: var(--font-size-xs);
+      font-size: var(--font-size);
+      color: var(--text-secondary-color);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .agent-chat-target-chevron {
+      flex-shrink: 0;
+      opacity: 0.7;
     }
   }
 
@@ -148,12 +258,17 @@
     width: 100%;
     resize: none;
     font-family: inherit;
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-half) var(--spacing);
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+    padding: var(--spacing) var(--spacing);
     border: var(--base-border);
     border-radius: var(--border-radius);
     background: var(--background-color);
     color: var(--text-color);
+
+    &::placeholder {
+      color: var(--text-secondary-color);
+    }
 
     &:focus {
       outline: none;
@@ -165,6 +280,22 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+    gap: var(--spacing);
+    padding: var(--spacing-double);
+
+    button {
+      height: 32px;
+      font-size: var(--font-size-md);
+      min-width: 110px;
+    }
+  }
+
+  // Icon + label buttons (Stop, New chat) need the two spaced apart and
+  // vertically centred, which the button component doesn't do on its own.
+  .agent-chat-footer-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     gap: var(--spacing);
   }
 

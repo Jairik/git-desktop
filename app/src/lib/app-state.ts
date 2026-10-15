@@ -355,6 +355,12 @@ export interface IAppState {
   readonly repositoryIndicatorsEnabled: boolean
 
   /**
+   * Whether to keep a local agent session running in the background so the
+   * first reply of a chat doesn't pay the CLI's startup cost.
+   */
+  readonly keepAgentSessionWarm: boolean
+
+  /**
    * Whether or not the app should use spell check on commit summary and description
    */
   readonly commitSpellcheckEnabled: boolean

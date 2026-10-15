@@ -10,10 +10,12 @@ interface IAdvancedPreferencesProps {
   readonly optOutOfUsageTracking: boolean
   readonly useExternalCredentialHelper: boolean
   readonly repositoryIndicatorsEnabled: boolean
+  readonly keepAgentSessionWarm: boolean
   readonly onUseWindowsOpenSSHChanged: (checked: boolean) => void
   readonly onOptOutofReportingChanged: (checked: boolean) => void
   readonly onUseExternalCredentialHelperChanged: (checked: boolean) => void
   readonly onRepositoryIndicatorsEnabledChanged: (enabled: boolean) => void
+  readonly onKeepAgentSessionWarmChanged: (enabled: boolean) => void
 }
 
 interface IAdvancedPreferencesState {
@@ -66,6 +68,12 @@ export class Advanced extends React.Component<
     event: React.FormEvent<HTMLInputElement>
   ) => {
     this.props.onRepositoryIndicatorsEnabledChanged(event.currentTarget.checked)
+  }
+
+  private onKeepAgentSessionWarmChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    this.props.onKeepAgentSessionWarmChanged(event.currentTarget.checked)
   }
 
   private onUseWindowsOpenSSHChanged = (
@@ -122,6 +130,33 @@ export class Advanced extends React.Component<
             }
             onChange={this.onReportingOptOutChanged}
           />
+        </div>
+        <div className="advanced-section">
+          <h2>Local agents</h2>
+          <Checkbox
+            label="Keep the agent session running"
+            value={
+              this.props.keepAgentSessionWarm
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onKeepAgentSessionWarmChanged}
+            ariaDescribedBy="keep-agent-session-warm-description"
+          />
+          <div
+            id="keep-agent-session-warm-description"
+            className="settings-description"
+          >
+            <p>
+              Starts the agent's session (for example Antigravity's command line
+              tool) when GitHub Desktop starts and keeps it running, so the
+              first reply of a chat doesn't wait for it to start up.
+            </p>
+            <p>
+              The session runs in the background until you quit GitHub Desktop.
+              It uses a little memory while it's running.
+            </p>
+          </div>
         </div>
         <h2>Network and credentials</h2>
         {this.renderSSHSettings()}

@@ -7,7 +7,9 @@ import { Button } from '../lib/button'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { showContextualMenu } from '../../lib/menu-item'
+import { shell } from '../../lib/app-shell'
 import { getLocalAgent } from '../../lib/local-agent'
+import { MarkdownText } from './markdown-text'
 import {
   cancelChat,
   getChatState,
@@ -142,6 +144,30 @@ export class AgentChatDialog extends React.Component<
     return getLocalAgent(selection.agent)?.name ?? selection.agent
   }
 
+  /**
+   * Agents link to the web and to files in the repository. Web links open in
+   * the browser, file links reveal in the file manager, anything else is left
+   * alone (the click never navigates the app itself).
+   */
+  private onLinkClick = (url: string) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url)
+      return
+    }
+
+    if (/^file:\/\//i.test(url)) {
+      try {
+        let pathname = decodeURIComponent(new URL(url).pathname)
+        if (__WIN32__ && /^\/[a-zA-Z]:/.test(pathname)) {
+          pathname = pathname.slice(1)
+        }
+        shell.showItemInFolder(pathname)
+      } catch {
+        // Ignore links we can't make sense of
+      }
+    }
+  }
+
   private renderStatus() {
     const { chat, now } = this.state
     const elapsed = Math.max(0, Math.floor((now - chat.startedAt) / 1000))
@@ -190,7 +216,11 @@ export class AgentChatDialog extends React.Component<
             <div className="agent-chat-author">
               {turn.role === 'user' ? 'You' : this.agentName}
             </div>
-            <div className="agent-chat-text">{turn.text}</div>
+            {turn.role === 'user' ? (
+              <div className="agent-chat-text">{turn.text}</div>
+            ) : (
+              <MarkdownText text={turn.text} onLinkClick={this.onLinkClick} />
+            )}
           </div>
         ))}
         {chat.isRunning ? this.renderStatus() : null}
@@ -226,7 +256,14 @@ export class AgentChatDialog extends React.Component<
               disabled={chat.isRunning}
             >
               <Octicon symbol={octicons.sparkle} />
-              <span className="agent-chat-target-label">{selectionLabel}</span>
+              <span className="agent-chat-target-agent">{this.agentName}</span>
+              <span className="agent-chat-target-model">
+                {chat.selection.model}
+              </span>
+              <Octicon
+                symbol={octicons.chevronDown}
+                className="agent-chat-target-chevron"
+              />
             </Button>
             <textarea
               className="agent-chat-input"

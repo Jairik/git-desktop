@@ -91,7 +91,10 @@ import { InstallGit } from './install-git'
 import { EditorError } from './editor'
 import { CopilotAppNotFoundDialog } from './copilot-app/copilot-app-not-found-dialog'
 import { AgentChatDialog } from './agent-chat/agent-chat-dialog'
-import { getSelectedLocalAgent } from '../lib/local-agent'
+import {
+  getSelectedLocalAgent,
+  prewarmLocalAgentSession,
+} from '../lib/local-agent'
 import { DiffSelectionType } from '../models/diff'
 import { About } from './about'
 import { Publish } from './publish-repository'
@@ -284,6 +287,9 @@ export class App extends React.Component<IAppProps, IAppState> {
   private updateIntervalHandle?: number
 
   private repositoryViewRef = React.createRef<RepositoryView>()
+
+  /** The repository we've started an agent session for, if any. */
+  private warmSessionRepositoryPath: string | null = null
 
   /**
    * Gets a value indicating whether or not we're currently showing a
@@ -1157,6 +1163,32 @@ export class App extends React.Component<IAppProps, IAppState> {
     document.addEventListener('focus', this.onDocumentFocus, {
       capture: true,
     })
+
+    this.updateWarmAgentSession()
+  }
+
+  public componentDidUpdate() {
+    this.updateWarmAgentSession()
+  }
+
+  /**
+   * Start the configured agent's session for the selected repository, so the
+   * first chat message doesn't wait for the CLI to start up. Only does
+   * anything when the user has asked to keep agent sessions warm.
+   */
+  private updateWarmAgentSession() {
+    const repository = this.getRepository()
+    const path = repository instanceof Repository ? repository.path : null
+
+    if (path === this.warmSessionRepositoryPath) {
+      return
+    }
+
+    this.warmSessionRepositoryPath = path
+
+    if (path !== null) {
+      prewarmLocalAgentSession(path)
+    }
   }
 
   private onDocumentFocus = (event: FocusEvent) => {
@@ -1827,6 +1859,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             customShell={this.state.customShell}
             copilotAppPath={this.state.copilotAppPath}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
+            keepAgentSessionWarm={this.state.keepAgentSessionWarm}
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
             showDiffCheckMarks={this.state.showDiffCheckMarks}

@@ -24,7 +24,11 @@ import type {
 import {
   generateCommitMessageWithLocalAgent,
   ILocalAgentSelection,
+  isWarmSessionEnabled,
   LocalAgentCancelledError,
+  prewarmLocalAgentSession,
+  setWarmSessionEnabled,
+  stopLocalAgentSessions,
 } from '../local-agent'
 import {
   CommitMessageGenerationCancelledError,
@@ -725,6 +729,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private repositoryIndicatorsEnabled: boolean
 
+  private keepAgentSessionWarm: boolean = false
+
   /** Which step the user needs to complete next in the onboarding tutorial */
   private currentOnboardingTutorialStep = TutorialStep.NotApplicable
   private readonly tutorialAssessor: OnboardingTutorialAssessor
@@ -836,6 +842,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.repositoryIndicatorsEnabled =
       getBoolean(repositoryIndicatorsEnabledKey) ?? true
+
+    this.keepAgentSessionWarm = isWarmSessionEnabled()
 
     this.repositoryIndicatorUpdater = new RepositoryIndicatorUpdater(
       this.getRepositoriesForIndicatorRefresh,
@@ -1339,6 +1347,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       optOutOfUsageTracking: this.statsStore.getOptOut(),
       currentOnboardingTutorialStep: this.currentOnboardingTutorialStep,
       repositoryIndicatorsEnabled: this.repositoryIndicatorsEnabled,
+      keepAgentSessionWarm: this.keepAgentSessionWarm,
       commitSpellcheckEnabled: this.commitSpellcheckEnabled,
       currentDragElement: this.currentDragElement,
       lastThankYou: this.lastThankYou,
@@ -4309,6 +4318,26 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.repositoryIndicatorUpdater.start()
     } else {
       this.repositoryIndicatorUpdater.stop()
+    }
+
+    this.emitUpdate()
+  }
+
+  public _setKeepAgentSessionWarm(keepAgentSessionWarm: boolean) {
+    if (this.keepAgentSessionWarm === keepAgentSessionWarm) {
+      return
+    }
+
+    setWarmSessionEnabled(keepAgentSessionWarm)
+    this.keepAgentSessionWarm = keepAgentSessionWarm
+
+    if (keepAgentSessionWarm) {
+      const repository = this.selectedRepository
+      if (repository instanceof Repository) {
+        prewarmLocalAgentSession(repository.path)
+      }
+    } else {
+      stopLocalAgentSessions()
     }
 
     this.emitUpdate()
@@ -10394,6 +10423,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   public _quitApp(evenIfUpdating: boolean) {
+    // Take any background agent sessions down with us.
+    stopLocalAgentSessions()
+
     if (evenIfUpdating) {
       sendWillQuitEvenIfUpdatingSync()
     }

@@ -119,6 +119,7 @@ interface IPreferencesProps {
   readonly customShell: ICustomIntegration | null
   readonly copilotAppPath: string | null
   readonly repositoryIndicatorsEnabled: boolean
+  readonly keepAgentSessionWarm: boolean
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
@@ -174,6 +175,7 @@ interface IPreferencesState {
    */
   readonly existingLockFilePath?: string
   readonly repositoryIndicatorsEnabled: boolean
+  readonly keepAgentSessionWarm: boolean
 
   readonly initiallySelectedTheme: ApplicationTheme
   readonly initiallySelectedTabSize: number
@@ -253,6 +255,7 @@ export class Preferences extends React.Component<
       availableShells: [],
       selectedShell: this.props.selectedShell,
       repositoryIndicatorsEnabled: this.props.repositoryIndicatorsEnabled,
+      keepAgentSessionWarm: this.props.keepAgentSessionWarm,
       initiallySelectedTheme: this.props.selectedTheme,
       initiallySelectedTabSize: this.props.selectedTabSize,
       alwaysShowWorktreeList: this.props.alwaysShowWorktreeList,
@@ -744,6 +747,7 @@ export class Preferences extends React.Component<
             optOutOfUsageTracking={this.state.optOutOfUsageTracking}
             useExternalCredentialHelper={this.state.useExternalCredentialHelper}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
+            keepAgentSessionWarm={this.state.keepAgentSessionWarm}
             onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
             onOptOutofReportingChanged={this.onOptOutofReportingChanged}
             onUseExternalCredentialHelperChanged={
@@ -752,6 +756,7 @@ export class Preferences extends React.Component<
             onRepositoryIndicatorsEnabledChanged={
               this.onRepositoryIndicatorsEnabledChanged
             }
+            onKeepAgentSessionWarmChanged={this.onKeepAgentSessionWarmChanged}
           />
         )
         break
@@ -785,6 +790,10 @@ export class Preferences extends React.Component<
     repositoryIndicatorsEnabled: boolean
   ) => {
     this.setState({ repositoryIndicatorsEnabled })
+  }
+
+  private onKeepAgentSessionWarmChanged = (keepAgentSessionWarm: boolean) => {
+    this.setState({ keepAgentSessionWarm })
   }
 
   private onLockFileDeleted = () => {
@@ -1072,6 +1081,10 @@ export class Preferences extends React.Component<
         dispatcher.setRepositoryIndicatorsEnabled(
           this.state.repositoryIndicatorsEnabled
         )
+      }
+
+      if (this.props.keepAgentSessionWarm !== this.state.keepAgentSessionWarm) {
+        dispatcher.setKeepAgentSessionWarm(this.state.keepAgentSessionWarm)
       }
 
       if (this.state.hooksPreferencesDirty) {

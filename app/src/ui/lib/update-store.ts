@@ -20,6 +20,7 @@ import { ReleaseSummary } from '../../models/release-notes'
 import { generateReleaseSummary } from '../../lib/release-notes'
 import { setNumber, getNumber } from '../../lib/local-storage'
 import { enableUpdateFromEmulatedX64ToARM64 } from '../../lib/feature-flag'
+import { stopLocalAgentSessions } from '../../lib/local-agent'
 import { offsetFromNow } from '../../lib/offset-from'
 import { gte, SemVer } from 'semver'
 import { getVersion } from './app-proxy'
@@ -263,6 +264,9 @@ class UpdateStore {
 
   /** Quit and install the update. */
   public quitAndInstallUpdate() {
+    // Take any background agent sessions down with us.
+    stopLocalAgentSessions()
+
     // This is synchronous so that we can ensure the app will let itself be quit
     // before we call the function to quit.
     // eslint-disable-next-line no-sync

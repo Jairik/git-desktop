@@ -2955,6 +2955,10 @@ export class Dispatcher {
     this.appStore._setRepositoryIndicatorsEnabled(repositoryIndicatorsEnabled)
   }
 
+  public setKeepAgentSessionWarm(keepAgentSessionWarm: boolean) {
+    return this.appStore._setKeepAgentSessionWarm(keepAgentSessionWarm)
+  }
+
   public setCommitSpellcheckEnabled(commitSpellcheckEnabled: boolean) {
     this.appStore._setCommitSpellcheckEnabled(commitSpellcheckEnabled)
   }

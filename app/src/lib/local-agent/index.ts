@@ -1,6 +1,7 @@
 import { getStringArray, setStringArray } from '../local-storage'
 import { agyAgent } from './agy'
 import { opencodeAgent } from './opencode'
+import { isWarmSessionEnabled } from './settings'
 import { Disposable, Emitter } from 'event-kit'
 import {
   ILocalAgent,
@@ -11,6 +12,8 @@ import {
 } from './shared'
 
 export * from './shared'
+
+export { isWarmSessionEnabled, setWarmSessionEnabled } from './settings'
 
 /** All the CLI agents that can generate commit messages. */
 export const LocalAgents: ReadonlyArray<ILocalAgent> = [opencodeAgent, agyAgent]
@@ -172,4 +175,36 @@ export function sendLocalAgentChat(
     session,
     onProgress,
   })
+}
+
+let unloadHandlerRegistered = false
+
+/** Stop the background sessions when the window goes away. */
+function registerUnloadHandler() {
+  if (unloadHandlerRegistered) {
+    return
+  }
+
+  unloadHandlerRegistered = true
+  window.addEventListener('beforeunload', () => stopLocalAgentSessions())
+}
+
+/**
+ * Start the configured agent's session for `repositoryPath` in the background,
+ * if the user asked to keep sessions warm. Safe to call repeatedly.
+ */
+export function prewarmLocalAgentSession(repositoryPath: string) {
+  if (!isWarmSessionEnabled()) {
+    return
+  }
+
+  registerUnloadHandler()
+
+  const selection = getSelectedLocalAgent()
+  getLocalAgent(selection.agent)?.warmUp?.(repositoryPath, selection.model)
+}
+
+/** Stop any background sessions started by `prewarmLocalAgentSession`. */
+export function stopLocalAgentSessions() {
+  LocalAgents.forEach(agent => agent.dispose?.())
 }

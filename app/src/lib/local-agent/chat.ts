@@ -1,8 +1,10 @@
 import { Disposable, Emitter } from 'event-kit'
 import {
   getSelectedLocalAgent,
+  prewarmLocalAgentSession,
   sendLocalAgentChat,
   setSelectedLocalAgent,
+  stopLocalAgentSessions,
   ILocalAgentSelection,
 } from './index'
 import { LocalAgentCancelledError } from './shared'
@@ -106,6 +108,7 @@ export function setChatRepository(repositoryPath: string | null) {
     status: '',
     draft: '',
   })
+  restartAgentSession(repositoryPath)
 }
 
 /** Forget the conversation, keeping the agent and model selection. */
@@ -113,6 +116,18 @@ export function resetChat() {
   cancelChat()
   session = null
   update({ turns: [], error: null, status: '', draft: '' })
+  restartAgentSession(state.repositoryPath)
+}
+
+/**
+ * Drop the agent's session so the next turn starts a fresh conversation, and
+ * start a new one if the user is keeping sessions warm.
+ */
+function restartAgentSession(repositoryPath: string | null) {
+  stopLocalAgentSessions()
+  if (repositoryPath !== null) {
+    prewarmLocalAgentSession(repositoryPath)
+  }
 }
 
 /** Stop the in-flight reply, if there is one. */

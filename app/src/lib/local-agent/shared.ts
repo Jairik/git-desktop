@@ -89,6 +89,16 @@ export interface ILocalAgent {
    * return null and start fresh.
    */
   chat(request: ILocalAgentChatRequest): Promise<ILocalAgentChatReply>
+
+  /**
+   * Optional: start whatever this agent needs to answer quickly, e.g. a
+   * long-lived process. Called when the app starts if the user has asked to
+   * keep sessions warm.
+   */
+  warmUp?(cwd: string, model: string): void
+
+  /** Optional: stop anything started by `warmUp`. */
+  dispose?(): void
 }
 
 /**

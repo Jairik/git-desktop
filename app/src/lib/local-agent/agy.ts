@@ -12,6 +12,8 @@ import {
   runAgentCli,
   withTempDir,
 } from './shared'
+import { ensureWarmSession, sendWarmTurn, stopWarmSession } from './agy-session'
+import { isWarmSessionEnabled } from './settings'
 
 const EnvVar = 'AGY_BIN'
 
@@ -122,11 +124,27 @@ export const agyAgent: ILocalAgent = {
   },
 
   async chat({ prompt, model, cwd, signal, session, onProgress }) {
+    // A long-lived session answers much faster (no CLI startup, no fresh
+    // conversation per turn), so prefer it when the user has asked for it.
+    if (isWarmSessionEnabled()) {
+      onProgress('Asking Antigravity')
+      return sendWarmTurn(
+        { executable: getAgyPath(), cwd, model },
+        prompt,
+        signal,
+        onProgress
+      )
+    }
+
     const args = [
       '--print',
       prompt,
       '--model',
       model,
+      // Plan mode keeps a chat turn to reading and reasoning, so it never
+      // trips a command/write permission that print mode can't ask about.
+      '--mode',
+      'plan',
       '--output-format',
       'stream-json',
     ]
@@ -181,12 +199,20 @@ export const agyAgent: ILocalAgent = {
     }
 
     const text =
-      draft.trim().length > 0 ? draft.trim() : extractAgyResponse(stdout).trim()
+      draft.trim().length > 0 ? draft.trim() : extractChatResponse(stdout)
     if (text.length === 0) {
-      throw new Error('agy did not return a reply')
+      throw new Error(emptyReplyError(stdout))
     }
 
     return { text, session: conversation }
+  },
+
+  warmUp(cwd, model) {
+    ensureWarmSession({ executable: getAgyPath(), cwd, model })
+  },
+
+  dispose() {
+    stopWarmSession(new Error('The Antigravity session was closed'))
   },
 }
 
@@ -237,4 +263,26 @@ function extractAgyResponse(stdout: string): string {
   }
 
   return result.response
+}
+
+/** The reply from agy's final result event, used when nothing was streamed. */
+function extractChatResponse(stdout: string): string {
+  const result = findResult(stdout)
+  if (result === null) {
+    throw new Error('agy returned output that could not be parsed')
+  }
+
+  return typeof result.response === 'string' ? result.response.trim() : ''
+}
+
+/** Explain an empty chat reply rather than reporting "no reply" flatly. */
+function emptyReplyError(stdout: string): string {
+  if (stdout.includes('auto-denied')) {
+    return (
+      'Antigravity wanted to run a command, which it cannot ask permission ' +
+      'for in the background. Try asking it to read specific files instead.'
+    )
+  }
+
+  return 'Antigravity did not return a reply'
 }
